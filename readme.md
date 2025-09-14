@@ -22,6 +22,7 @@
 ## Tech Stack Used:
 - Flask
 - React.js
+- Tailwind CSS
 - Ollama for LLM
 
 ## How to setup locally
