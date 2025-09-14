@@ -15,7 +15,7 @@
 ![Main Screen](screenshots/ss.png)
 ![Character Creation](screenshots/character_creation_ss.png)
 
-## Minimum System Requirements
+## Recommended System Requirements
 - 16GB RAM
 - CUDA GPU 8GB VRAM
 
@@ -25,9 +25,13 @@
 - Tailwind CSS
 - Ollama for LLM
 
+## Models Recommended:
+- Gemma3 4B
+- Joycaption or BLIP for image captioning
+
 ## How to setup locally
 - Step 1 install Ollama in your device [Ollama](https://ollama.com/download)
 - Step 2 download LLM, use command `ollama run model_name` you can find [Models](https://ollama.com/search)
-- Step 3 Download model for image captioning I recommand joycaption
+- Step 3 Download model for image captioning I recommend joycaption
 - Step 4 `pip install -r requirements.txt`
 - Step 5 `python app.py`
