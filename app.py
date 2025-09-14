@@ -8,6 +8,7 @@ import json
 import re
 import uuid
 from datetime import datetime
+import psutil, os
 
 app = Flask(__name__, static_folder='static/build', static_url_path='')
 CORS(app)  # Enable CORS for development
@@ -18,6 +19,18 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 # Create directories if they don't exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs('static/build', exist_ok=True)
+
+
+process = psutil.Process(os.getpid())
+
+def log_memory():
+    total_mem = process.memory_info().rss / (1024*1024)  # MB
+    children_mem = sum([c.memory_info().rss for c in process.children()]) / (1024*1024)
+    print(f"Main RAM: {total_mem:.2f} MB, Children RAM: {children_mem:.2f} MB")
+
+@app.before_request
+def log_usage():
+    log_memory()
 
 def get_available_models():
     """Get available models from Ollama and categorize them"""
