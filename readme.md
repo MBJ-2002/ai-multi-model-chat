@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 # Multi Model AI chat App
 
 ## Features
@@ -30,3 +31,16 @@
 - Step 3 Download model for image captioning I recommand joycaption
 - Step 4 `pip install -r requirements.txt`
 - Step 5 `python app.py`
+=======
+# Multi Model AI chat App
+
+## Tech Stack Used:
+- Flask
+- React.js
+- Ollama for LLM
+
+## How to setup locally
+- First you need to install Ollama in your device
+- Then download models you want to use
+- I have used LLaVa for image captioning and Gemma3 for chat
+>>>>>>> Stashed changes
