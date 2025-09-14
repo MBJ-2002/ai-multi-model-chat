@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 app = Flask(__name__, static_folder='static/build', static_url_path='')
-CORS(app, origins=["http://localhost:3000"])  # Enable CORS for development
+CORS(app)  # Enable CORS for development
 
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -36,7 +36,7 @@ def get_available_models():
                 caption_models.append(model_name)
             else:
                 chat_models.append(model_name)
-        print(models_response)
+        
         # Ensure we have at least one model in each category
         if not chat_models and all_models:
             chat_models = [all_models[0]]
@@ -206,8 +206,7 @@ def serve_react_app():
         <p>Please build the React app first:</p>
         <ol>
             <li>cd frontend</li>
-            <li>npm run build</li>
-            <li>npm run copy-build</li>
+            <li>npm run build-and-copy</li>
         </ol>
         <p>Then restart the Flask server.</p>
         """, 404

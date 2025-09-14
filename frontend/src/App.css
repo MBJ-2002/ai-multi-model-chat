@@ -367,6 +367,193 @@
   }
 }
 
+/* Markdown Content Styles */
+.markdown-content {
+  line-height: 1.6;
+  word-wrap: break-word;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  margin: 0.5em 0 0.3em 0;
+  font-weight: 600;
+}
+
+.markdown-content p {
+  margin: 0.5em 0;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.markdown-content li {
+  margin: 0.2em 0;
+}
+
+.markdown-content blockquote {
+  border-left: 4px solid #10b981;
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  background-color: rgba(16, 185, 129, 0.1);
+  border-radius: 0 0.25rem 0.25rem 0;
+}
+
+.dark .markdown-content blockquote {
+  background-color: rgba(16, 185, 129, 0.2);
+}
+
+/* Code Styling */
+.markdown-content pre {
+  background-color: #f8f8f8;
+  border-radius: 0.5rem;
+  padding: 0;
+  margin: 1em 0;
+  overflow-x: auto;
+}
+
+.dark .markdown-content pre {
+  background-color: #1e1e1e;
+}
+
+.code-block-wrapper {
+  position: relative;
+  margin: 1em 0;
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #e5e7eb;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+  font-size: 0.8rem;
+  border-bottom: 1px solid #d1d5db;
+}
+
+.dark .code-block-header {
+  background-color: #2d3748;
+  border-bottom-color: #4a5568;
+}
+
+.code-language {
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.dark .code-language {
+  color: #a0aec0;
+}
+
+.copy-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  transition: background-color 0.2s;
+}
+
+.copy-button:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark .copy-button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.markdown-content code {
+  padding: 1rem;
+  display: block;
+  overflow-x: auto;
+  border-radius: 0 0 0.5rem 0.5rem;
+}
+
+.inline-code {
+  background-color: #f1f5f9 !important;
+  padding: 0.15em 0.3em !important;
+  border-radius: 0.25rem !important;
+  font-size: 0.9em !important;
+  display: inline !important;
+}
+
+.dark .inline-code {
+  background-color: #374151 !important;
+}
+
+/* Link Styling */
+.message-link {
+  color: #10b981;
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+.message-link:hover {
+  color: #059669;
+}
+
+.dark .message-link {
+  color: #34d399;
+}
+
+.dark .message-link:hover {
+  color: #6ee7b7;
+}
+
+/* Table Styling */
+.table-wrapper {
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.message-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 300px;
+}
+
+.message-table th,
+.message-table td {
+  border: 1px solid #d1d5db;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.message-table th {
+  background-color: #f9fafb;
+  font-weight: 600;
+}
+
+.dark .message-table th,
+.dark .message-table td {
+  border-color: #4b5563;
+}
+
+.dark .message-table th {
+  background-color: #374151;
+}
+
+/* Improved message spacing */
+.message-content .markdown-content > *:first-child {
+  margin-top: 0;
+}
+
+.message-content .markdown-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Task lists */
+.markdown-content input[type="checkbox"] {
+  margin-right: 0.5em;
+}
+
 /* Input Area */
 .input-container {
   display: flex;

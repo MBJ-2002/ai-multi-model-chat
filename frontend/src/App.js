@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.css';
 import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
@@ -386,10 +390,13 @@ export default function ChatApp() {
                   className={`message ${message.sender} ${message.isError ? 'error' : ''}`}
                 >
                   <div className="message-content">
-                    {message.content}
+                    <MessageContent 
+                      content={message.content} 
+                      sender={message.sender}
+                    />
                     {message.imageCaption && (
                       <div className="image-caption">
-                        Caption: {message.imageCaption}
+                        <strong>Caption:</strong> {message.imageCaption}
                       </div>
                     )}
                   </div>
@@ -465,6 +472,71 @@ export default function ChatApp() {
         />
       )}
     </div>
+  );
+}
+
+// Message Content Component with Markdown Support
+function MessageContent({ content, sender }) {
+  const components = {
+    // Custom link rendering
+    a: ({ node, ...props }) => (
+      <a 
+        {...props} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="message-link"
+      />
+    ),
+    // Custom code block rendering
+    code: ({ node, inline, className, children, ...props }) => {
+      const match = /language-(\w+)/.exec(className || '');
+      return !inline ? (
+        <div className="code-block-wrapper">
+          <div className="code-block-header">
+            <span className="code-language">{match ? match[1] : 'text'}</span>
+            <button 
+              onClick={() => navigator.clipboard.writeText(String(children))}
+              className="copy-button"
+              title="Copy code"
+            >
+              📋
+            </button>
+          </div>
+          <code className={className} {...props}>
+            {children}
+          </code>
+        </div>
+      ) : (
+        <code className="inline-code" {...props}>
+          {children}
+        </code>
+      );
+    },
+    // Custom blockquote rendering
+    blockquote: ({ children }) => (
+      <blockquote className="message-blockquote">
+        {children}
+      </blockquote>
+    ),
+    // Custom table rendering
+    table: ({ children }) => (
+      <div className="table-wrapper">
+        <table className="message-table">
+          {children}
+        </table>
+      </div>
+    )
+  };
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeHighlight]}
+      components={components}
+      className={`markdown-content ${sender === 'user' ? 'user-message' : 'bot-message'}`}
+    >
+      {content}
+    </ReactMarkdown>
   );
 }
 
