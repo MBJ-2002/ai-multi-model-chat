@@ -29,6 +29,10 @@ export default function ChatApp() {
   // UI State
   const [showCreateCharacterModal, setShowCreateCharacterModal] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState('');
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  
+  // Session Management
+  const [sessionId, setSessionId] = useState(null);
   
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -48,21 +52,39 @@ export default function ChatApp() {
     localStorage.setItem('darkMode', isDarkMode);
   }, [isDarkMode]);
 
-  // Fetch initial data
+  // Fetch initial data and initialize session
   useEffect(() => {
     fetchInitialData();
   }, []);
 
+  // Close mobile sidebar when clicking outside or on selection
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 768) {
+        setShowMobileSidebar(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const fetchInitialData = async () => {
     try {
-      const response = await fetch(`${API_BASE}/get_initial_data`);
+      const response = await fetch(`${API_BASE}/get_initial_data`, {
+        method: 'GET',
+        credentials: 'include' // IMPORTANT: include credentials for session cookie
+      });
       const data = await response.json();
       if (data.success) {
+        setSessionId(data.session_id);
         setChatModels(data.chat_models || []);
         setCaptionModels(data.caption_models || []);
         setCharacters(data.characters || []);
         setSelectedChatModel(data.selected_chat_model || '');
         setSelectedCaptionModel(data.selected_caption_model || '');
+        
+        console.log(`Session initialized: ${data.session_id.substring(0, 8)}... (${data.active_sessions} active sessions)`);
       }
     } catch (error) {
       console.error('Failed to fetch initial data:', error);
@@ -90,6 +112,7 @@ export default function ChatApp() {
       const response = await fetch(`${API_BASE}/send_message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ message: messageText })
       });
       
@@ -129,10 +152,12 @@ export default function ChatApp() {
   const selectChatModel = async (model) => {
     setSelectedChatModel(model);
     setDropdownOpen('');
+    setShowMobileSidebar(false);
     try {
       await fetch(`${API_BASE}/select_chat_model`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ model })
       });
     } catch (error) {
@@ -143,10 +168,12 @@ export default function ChatApp() {
   const selectCaptionModel = async (model) => {
     setSelectedCaptionModel(model);
     setDropdownOpen('');
+    setShowMobileSidebar(false);
     try {
       await fetch(`${API_BASE}/select_image_model`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ model })
       });
     } catch (error) {
@@ -157,12 +184,14 @@ export default function ChatApp() {
   const selectCharacter = async (character) => {
     setSelectedCharacter(character);
     setDropdownOpen('');
-    setMessages([]); // Clear messages when switching characters
+    setMessages([]);
+    setShowMobileSidebar(false);
     
     try {
       const response = await fetch(`${API_BASE}/select_character`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ character })
       });
       const data = await response.json();
@@ -179,6 +208,7 @@ export default function ChatApp() {
       const response = await fetch(`${API_BASE}/create_character`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(characterData)
       });
       
@@ -215,6 +245,7 @@ export default function ChatApp() {
       
       const response = await fetch(`${API_BASE}/upload_image`, {
         method: 'POST',
+        credentials: 'include',
         body: formData
       });
       
@@ -244,7 +275,10 @@ export default function ChatApp() {
     
     setMessages([]);
     try {
-      await fetch(`${API_BASE}/reset_chat`, { method: 'POST' });
+      await fetch(`${API_BASE}/reset_chat`, { 
+        method: 'POST',
+        credentials: 'include'
+      });
     } catch (error) {
       console.error('Failed to reset chat:', error);
     }
@@ -252,7 +286,10 @@ export default function ChatApp() {
 
   const refreshModels = async () => {
     try {
-      const response = await fetch(`${API_BASE}/refresh_models`, { method: 'POST' });
+      const response = await fetch(`${API_BASE}/refresh_models`, { 
+        method: 'POST',
+        credentials: 'include'
+      });
       const data = await response.json();
       if (data.success) {
         setChatModels(data.chat_models);
@@ -265,10 +302,26 @@ export default function ChatApp() {
 
   return (
     <div className={`chat-app ${isDarkMode ? 'dark' : ''}`}>
+      {/* Mobile Sidebar Overlay */}
+      {showMobileSidebar && (
+        <div 
+          className="mobile-overlay" 
+          onClick={() => setShowMobileSidebar(false)}
+        />
+      )}
+
       <div className="chat-container">
         {/* Sidebar */}
-        <aside className="sidebar">
-          <h2 className="sidebar-title">OPTIONS</h2>
+        <aside className={`sidebar ${showMobileSidebar ? 'show-mobile' : ''}`}>
+          <div className="mobile-sidebar-header">
+            <h2 className="sidebar-title">OPTIONS</h2>
+            <button 
+              className="mobile-close-btn"
+              onClick={() => setShowMobileSidebar(false)}
+            >
+              ✕
+            </button>
+          </div>
           
           {/* Chat Model Dropdown */}
           <div className="dropdown-section">
@@ -352,12 +405,21 @@ export default function ChatApp() {
           {/* Action Buttons */}
           <button 
             className="action-button"
-            onClick={() => setShowCreateCharacterModal(true)}
+            onClick={() => {
+              setShowCreateCharacterModal(true);
+              setShowMobileSidebar(false);
+            }}
           >
             CREATE CHARACTER
           </button>
           
-          <button className="action-button reset-button" onClick={resetChat}>
+          <button 
+            className="action-button reset-button" 
+            onClick={() => {
+              resetChat();
+              setShowMobileSidebar(false);
+            }}
+          >
             RESET CHAT
           </button>
 
@@ -371,17 +433,35 @@ export default function ChatApp() {
               <div className="toggle-slider" />
             </button>
           </div>
+
+          {/* Session Info (for debugging) */}
+          
         </aside>
 
         {/* Main Chat Area */}
         <main className="chat-main">
-          <h1 className="chat-title">{selectedCharacter || 'CHARACTER NAME'}</h1>
+          <div className="chat-header">
+            <div className="mobile-menu-container">
+              <button 
+                className="mobile-menu-btn"
+                onClick={() => setShowMobileSidebar(true)}
+              >
+                ☰ Menu
+              </button>
+            </div>
+            <h1 className="chat-title">{selectedCharacter || 'CHARACTER NAME'}</h1>
+          </div>
           
           <div className="messages-container">
             {messages.length === 0 ? (
               <div className="welcome-message">
-                <p>👋 Welcome to Ollama Chat UI!</p>
+                <p>👋 Welcome to AI Chat App</p>
                 <p>Select a character and start chatting</p>
+                {sessionId && (
+                  <p style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '1rem' }}>
+                    Your session: {sessionId.substring(0, 8)}...
+                  </p>
+                )}
               </div>
             ) : (
               messages.map(message => (
@@ -417,7 +497,7 @@ export default function ChatApp() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input Area */}
+          {/* Input Area - Updated with attachment inside */}
           <div className="input-container">
             <input
               type="file"
@@ -427,36 +507,42 @@ export default function ChatApp() {
               style={{ display: 'none' }}
             />
             
-            <button 
-              className="upload-button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!selectedCharacter}
-            >
-              <svg viewBox="0 0 24 24">
-                <path d="M12 4v16m8-8H4"/>
-              </svg>
-            </button>
-            
-            <input
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Type a message..."
-              disabled={isLoading || !selectedCharacter}
-              className="message-input"
-            />
+            <div className="input-wrapper">
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Type a message..."
+                disabled={isLoading || !selectedCharacter}
+                className="message-input"
+              />
+              
+              <button 
+                className="attachment-button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!selectedCharacter}
+                title="Attach image"
+                type="button"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.64 16.2a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                </svg>
+              </button>
+            </div>
             
             <button 
               onClick={sendMessage}
               disabled={isLoading || !inputValue.trim() || !selectedCharacter}
               className="send-button"
+              type="button"
             >
               {isLoading ? (
                 <div className="spinner" />
               ) : (
-                <svg viewBox="0 0 24 24">
-                  <path d="M8 7l4-4m0 0l4 4m-4-4v18"/>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 2L11 13"/>
+                  <path d="m22 2-7 20-4-9-9-4 20-7z"/>
                 </svg>
               )}
             </button>
@@ -478,7 +564,6 @@ export default function ChatApp() {
 // Message Content Component with Markdown Support
 function MessageContent({ content, sender }) {
   const components = {
-    // Custom link rendering
     a: ({ node, ...props }) => (
       <a 
         {...props} 
@@ -487,7 +572,6 @@ function MessageContent({ content, sender }) {
         className="message-link"
       />
     ),
-    // Custom code block rendering
     code: ({ node, inline, className, children, ...props }) => {
       const match = /language-(\w+)/.exec(className || '');
       return !inline ? (
@@ -498,6 +582,7 @@ function MessageContent({ content, sender }) {
               onClick={() => navigator.clipboard.writeText(String(children))}
               className="copy-button"
               title="Copy code"
+              type="button"
             >
               📋
             </button>
@@ -512,13 +597,11 @@ function MessageContent({ content, sender }) {
         </code>
       );
     },
-    // Custom blockquote rendering
     blockquote: ({ children }) => (
       <blockquote className="message-blockquote">
         {children}
       </blockquote>
     ),
-    // Custom table rendering
     table: ({ children }) => (
       <div className="table-wrapper">
         <table className="message-table">
