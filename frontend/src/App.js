@@ -31,6 +31,9 @@ export default function ChatApp() {
   const [dropdownOpen, setDropdownOpen] = useState('');
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   
+  // Session Management
+  const [sessionId, setSessionId] = useState(null);
+  
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -49,7 +52,7 @@ export default function ChatApp() {
     localStorage.setItem('darkMode', isDarkMode);
   }, [isDarkMode]);
 
-  // Fetch initial data
+  // Fetch initial data and initialize session
   useEffect(() => {
     fetchInitialData();
   }, []);
@@ -68,14 +71,20 @@ export default function ChatApp() {
 
   const fetchInitialData = async () => {
     try {
-      const response = await fetch(`${API_BASE}/get_initial_data`);
+      const response = await fetch(`${API_BASE}/get_initial_data`, {
+        method: 'GET',
+        credentials: 'include' // IMPORTANT: include credentials for session cookie
+      });
       const data = await response.json();
       if (data.success) {
+        setSessionId(data.session_id);
         setChatModels(data.chat_models || []);
         setCaptionModels(data.caption_models || []);
         setCharacters(data.characters || []);
         setSelectedChatModel(data.selected_chat_model || '');
         setSelectedCaptionModel(data.selected_caption_model || '');
+        
+        console.log(`Session initialized: ${data.session_id.substring(0, 8)}... (${data.active_sessions} active sessions)`);
       }
     } catch (error) {
       console.error('Failed to fetch initial data:', error);
@@ -103,6 +112,7 @@ export default function ChatApp() {
       const response = await fetch(`${API_BASE}/send_message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ message: messageText })
       });
       
@@ -147,6 +157,7 @@ export default function ChatApp() {
       await fetch(`${API_BASE}/select_chat_model`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ model })
       });
     } catch (error) {
@@ -162,6 +173,7 @@ export default function ChatApp() {
       await fetch(`${API_BASE}/select_image_model`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ model })
       });
     } catch (error) {
@@ -179,6 +191,7 @@ export default function ChatApp() {
       const response = await fetch(`${API_BASE}/select_character`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ character })
       });
       const data = await response.json();
@@ -195,6 +208,7 @@ export default function ChatApp() {
       const response = await fetch(`${API_BASE}/create_character`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(characterData)
       });
       
@@ -231,6 +245,7 @@ export default function ChatApp() {
       
       const response = await fetch(`${API_BASE}/upload_image`, {
         method: 'POST',
+        credentials: 'include',
         body: formData
       });
       
@@ -260,7 +275,10 @@ export default function ChatApp() {
     
     setMessages([]);
     try {
-      await fetch(`${API_BASE}/reset_chat`, { method: 'POST' });
+      await fetch(`${API_BASE}/reset_chat`, { 
+        method: 'POST',
+        credentials: 'include'
+      });
     } catch (error) {
       console.error('Failed to reset chat:', error);
     }
@@ -268,7 +286,10 @@ export default function ChatApp() {
 
   const refreshModels = async () => {
     try {
-      const response = await fetch(`${API_BASE}/refresh_models`, { method: 'POST' });
+      const response = await fetch(`${API_BASE}/refresh_models`, { 
+        method: 'POST',
+        credentials: 'include'
+      });
       const data = await response.json();
       if (data.success) {
         setChatModels(data.chat_models);
@@ -412,6 +433,9 @@ export default function ChatApp() {
               <div className="toggle-slider" />
             </button>
           </div>
+
+          {/* Session Info (for debugging) */}
+          
         </aside>
 
         {/* Main Chat Area */}
@@ -431,8 +455,13 @@ export default function ChatApp() {
           <div className="messages-container">
             {messages.length === 0 ? (
               <div className="welcome-message">
-                <p>👋 Welcome to Ollama Chat UI!</p>
+                <p>👋 Welcome to AI Chat App</p>
                 <p>Select a character and start chatting</p>
+                {sessionId && (
+                  <p style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '1rem' }}>
+                    Your session: {sessionId.substring(0, 8)}...
+                  </p>
+                )}
               </div>
             ) : (
               messages.map(message => (

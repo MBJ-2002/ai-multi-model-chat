@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, session
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
 from PIL import Image
@@ -8,11 +8,13 @@ import json
 import re
 import uuid
 from datetime import datetime
-import psutil, os
+import secrets
 
 app = Flask(__name__, static_folder='static/build', static_url_path='')
-CORS(app)  # Enable CORS for development
+CORS(app, supports_credentials=True)  # Enable credentials for sessions
 
+# Configure session management
+app.config['SECRET_KEY'] = secrets.token_hex(16)  # Generate random secret key
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
@@ -20,17 +22,8 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs('static/build', exist_ok=True)
 
-
-process = psutil.Process(os.getpid())
-
-def log_memory():
-    total_mem = process.memory_info().rss / (1024*1024)  # MB
-    children_mem = sum([c.memory_info().rss for c in process.children()]) / (1024*1024)
-    print(f"Main RAM: {total_mem:.2f} MB, Children RAM: {children_mem:.2f} MB")
-
-@app.before_request
-def log_usage():
-    log_memory()
+# Global session store - each session gets its own CharacterChat instance
+chat_sessions = {}
 
 def get_available_models():
     """Get available models from Ollama and categorize them"""
@@ -69,13 +62,14 @@ selected_image_model = caption_models[0] if caption_models else "aha2025/llama-j
 
 default_instruction = "Describe this image in detail, including what you see, the setting, objects, people, and any notable features."
 
-def generate_caption(image_path, instruction=default_instruction):
+def generate_caption(image_path, instruction=default_instruction, model=None):
     """Generate caption for image using Ollama"""
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"{image_path} not found")
     
+    caption_model = model or selected_image_model
     response = ollama.chat(
-        model=selected_image_model,
+        model=caption_model,
         messages=[{
             "role": "user",
             "content": instruction,
@@ -90,6 +84,8 @@ class CharacterChat:
         self.load_characters()
         self.messages = []
         self.current_character = None
+        self.selected_chat_model = selected_chat_model
+        self.selected_image_model = selected_image_model
 
     def load_characters(self):
         """Load characters from JSON file, create default if not exists"""
@@ -148,10 +144,10 @@ class CharacterChat:
     def process_image(self, image_path):
         """Process image and add to conversation"""
         instruction = self.current_character.get("image_caption_prompt", default_instruction)
-        caption = generate_caption(image_path, instruction)
+        caption = generate_caption(image_path, instruction, self.selected_image_model)
         
         self.messages.append({"role": "user", "content": f"user shows you this image: '{caption}'."})
-        response = ollama.chat(model=selected_chat_model, messages=self.messages)
+        response = ollama.chat(model=self.selected_chat_model, messages=self.messages)
         answer = response["message"]["content"]
         self.messages.append({"role": "assistant", "content": answer})
         
@@ -166,7 +162,7 @@ class CharacterChat:
             formatted = user_input
         
         self.messages.append({"role": "user", "content": formatted})
-        response = ollama.chat(model=selected_chat_model, messages=self.messages)
+        response = ollama.chat(model=self.selected_chat_model, messages=self.messages)
         answer = response["message"]["content"]
         self.messages.append({"role": "assistant", "content": answer})
         
@@ -201,8 +197,31 @@ class CharacterChat:
         else:
             self.messages = []
 
-# Initialize global chat instance
-chat = CharacterChat()
+def get_session_id():
+    """Get or create session ID"""
+    if 'session_id' not in session:
+        session['session_id'] = str(uuid.uuid4())
+        session.permanent = True  # Make session persistent
+    return session['session_id']
+
+def get_chat_session():
+    """Get or create chat session for current user"""
+    session_id = get_session_id()
+    
+    if session_id not in chat_sessions:
+        chat_sessions[session_id] = CharacterChat()
+        print(f"Created new chat session: {session_id[:8]}... (Total sessions: {len(chat_sessions)})")
+    
+    return chat_sessions[session_id]
+
+def cleanup_old_sessions():
+    """Clean up old inactive sessions (optional, for memory management)"""
+    # This could be enhanced with timestamp tracking and periodic cleanup
+    if len(chat_sessions) > 100:  # Arbitrary limit
+        oldest_sessions = list(chat_sessions.keys())[:50]
+        for session_id in oldest_sessions:
+            del chat_sessions[session_id]
+        print(f"Cleaned up {len(oldest_sessions)} old sessions")
 
 # ================================
 # REACT APP SERVING ROUTES
@@ -240,14 +259,19 @@ def serve_react_static(path):
 @app.route('/api/get_initial_data', methods=['GET'])
 def get_initial_data():
     """Get initial data for React app"""
+    chat = get_chat_session()
     characters_list = chat.get_characters_list()
+    session_id = get_session_id()
+    
     return jsonify({
         'success': True,
         'chat_models': chat_models,
         'caption_models': caption_models,
-        'selected_chat_model': selected_chat_model,
-        'selected_caption_model': selected_image_model,
-        'characters': characters_list
+        'selected_chat_model': chat.selected_chat_model,
+        'selected_caption_model': chat.selected_image_model,
+        'characters': characters_list,
+        'session_id': session_id,
+        'active_sessions': len(chat_sessions)
     })
 
 @app.route('/api/refresh_models', methods=['POST'])
@@ -268,6 +292,7 @@ def refresh_models():
 @app.route('/api/send_message', methods=['POST'])
 def send_message():
     """Handle message sending"""
+    chat = get_chat_session()
     data = request.get_json()
     message = data.get('message', '').strip()
     
@@ -279,6 +304,7 @@ def send_message():
     
     try:
         response = chat.ask(message)
+        cleanup_old_sessions()  # Optional cleanup
         return jsonify({
             'success': True, 
             'response': response,
@@ -292,30 +318,34 @@ def send_message():
 
 @app.route('/api/select_chat_model', methods=['POST'])
 def select_chat_model():
-    global selected_chat_model
+    """Select chat model for current session"""
+    chat = get_chat_session()
     data = request.get_json()
     model = data.get('model')
     
     if model in chat_models:
-        selected_chat_model = model
+        chat.selected_chat_model = model
         return jsonify({'success': True, 'message': f'Selected chat model: {model}'})
     else:
         return jsonify({'success': False, 'message': f'Model {model} not available'})
 
 @app.route('/api/select_image_model', methods=['POST'])
 def select_image_model():
-    global selected_image_model
+    """Select image model for current session"""
+    chat = get_chat_session()
     data = request.get_json()
     model = data.get('model')
     
     if model in caption_models:
-        selected_image_model = model
+        chat.selected_image_model = model
         return jsonify({'success': True, 'message': f'Selected image model: {model}'})
     else:
         return jsonify({'success': False, 'message': f'Model {model} not available'})
 
 @app.route('/api/select_character', methods=['POST'])
 def select_character():
+    """Select character for current session"""
+    chat = get_chat_session()
     data = request.get_json()
     character = data.get('character')
     
@@ -336,6 +366,8 @@ def select_character():
 
 @app.route('/api/create_character', methods=['POST'])
 def create_character():
+    """Create character for current session"""
+    chat = get_chat_session()
     data = request.get_json()
     name = data.get('name', '').strip()
     description = data.get('description', '').strip()
@@ -346,6 +378,10 @@ def create_character():
     
     try:
         character_key = chat.add_character(name, description, image_caption_prompt)
+        # Reload characters for all sessions (since they share the same file)
+        for session_chat in chat_sessions.values():
+            session_chat.load_characters()
+        
         return jsonify({
             'success': True, 
             'message': f'Character "{name}" created successfully',
@@ -358,6 +394,9 @@ def create_character():
 
 @app.route('/api/upload_image', methods=['POST'])
 def upload_image():
+    """Upload and process image for current session"""
+    chat = get_chat_session()
+    
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'})
     
@@ -367,12 +406,19 @@ def upload_image():
     
     if file and chat.current_character:
         filename = secure_filename(file.filename)
-        unique_filename = f"{uuid.uuid4()}_{filename}"
+        session_id = get_session_id()
+        unique_filename = f"{session_id[:8]}_{uuid.uuid4()}_{filename}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         
         try:
             file.save(filepath)
             caption, ai_response = chat.process_image(filepath)
+            
+            # Clean up uploaded file after processing (optional)
+            try:
+                os.remove(filepath)
+            except:
+                pass
             
             return jsonify({
                 'success': True, 
@@ -382,25 +428,49 @@ def upload_image():
                 'filename': filename
             })
         except Exception as e:
+            # Clean up file on error
+            try:
+                os.remove(filepath)
+            except:
+                pass
             return jsonify({'error': str(e)})
     
     return jsonify({'error': 'No character selected or processing failed'})
 
 @app.route('/api/reset_chat', methods=['POST'])
 def reset_chat():
+    """Reset chat for current session"""
+    chat = get_chat_session()
     chat.reset_conversation()
     return jsonify({'success': True, 'message': 'Chat reset successfully'})
 
+@app.route('/api/get_session_info', methods=['GET'])
+def get_session_info():
+    """Get current session information"""
+    session_id = get_session_id()
+    return jsonify({
+        'session_id': session_id,
+        'active_sessions': len(chat_sessions),
+        'session_short_id': session_id[:8] + '...'
+    })
+
 @app.route('/api/toggle_dark_mode', methods=['POST'])
 def toggle_dark_mode():
+    """Toggle dark mode (client-side only, no server state needed)"""
     return jsonify({'success': True, 'message': 'Dark mode toggled'})
 
+# Session cleanup on app context teardown
+@app.teardown_appcontext
+def cleanup_session(error):
+    """Optional cleanup when app context tears down"""
+    pass
+
 if __name__ == '__main__':
-    print("=== Ollama Chat UI ===")
+    print("=== Ollama Chat UI with Multi-User Session Management ===")
     print(f"Available Chat Models ({len(chat_models)}): {chat_models}")
     print(f"Available Caption Models ({len(caption_models)}): {caption_models}")
-    print(f"Selected Chat Model: {selected_chat_model}")
-    print(f"Selected Image Model: {selected_image_model}")
-    print("Starting Flask server on http://localhost:5000")
-    print("React app will be served from http://localhost:5000")
+    print(f"Default Chat Model: {selected_chat_model}")
+    print(f"Default Image Model: {selected_image_model}")
+    print("🚀 Starting Flask server with session support on http://localhost:5000")
+    print("👥 Multiple users can now use the app simultaneously without interference")
     app.run(debug=True, host='0.0.0.0', port=5000)
