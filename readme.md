@@ -30,7 +30,3 @@
 - Step 3 Download model for image captioning I recommand joycaption
 - Step 4 `pip install -r requirements.txt`
 - Step 5 `python app.py`
-
-## Future Plans
-- Optimize for hosting
-- Making more responsive

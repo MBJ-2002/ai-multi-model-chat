@@ -983,6 +983,197 @@
   background-color: #4b5563;
 }
 
+/* Model Download Modal Styles */
+.download-modal {
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.popular-models {
+  margin-bottom: 1.5rem;
+}
+
+.popular-models h3 {
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  color: #6b7280;
+}
+
+.dark .popular-models h3 {
+  color: #d1d5db;
+}
+
+.popular-models-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.popular-model-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.popular-model-card:hover {
+  border-color: #10b981;
+  background-color: #f0fdf4;
+}
+
+.dark .popular-model-card {
+  border-color: #4b5563;
+  background-color: #374151;
+}
+
+.dark .popular-model-card:hover {
+  border-color: #10b981;
+  background-color: #065f46;
+}
+
+.model-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+  color: #1f2937;
+}
+
+.dark .model-name {
+  color: #f9fafb;
+}
+
+.model-description {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+  line-height: 1.4;
+}
+
+.dark .model-description {
+  color: #9ca3af;
+}
+
+.model-size {
+  font-size: 0.75rem;
+  color: #10b981;
+  font-weight: 500;
+}
+
+.modal-divider {
+  text-align: center;
+  position: relative;
+  margin: 1.5rem 0;
+}
+
+.modal-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-color: #e5e7eb;
+}
+
+.dark .modal-divider::before {
+  background-color: #4b5563;
+}
+
+.modal-divider span {
+  background-color: white;
+  padding: 0 1rem;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.dark .modal-divider span {
+  background-color: #1f2937;
+  color: #9ca3af;
+}
+
+.model-name-help {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.5rem;
+  line-height: 1.4;
+}
+
+.dark .model-name-help {
+  color: #9ca3af;
+}
+
+.model-name-help a {
+  color: #10b981;
+  text-decoration: none;
+}
+
+.model-name-help a:hover {
+  text-decoration: underline;
+}
+
+.download-progress {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background-color: #f9fafb;
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7eb;
+}
+
+.dark .download-progress {
+  background-color: #374151;
+  border-color: #4b5563;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.progress-message {
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.dark .progress-message {
+  color: #d1d5db;
+}
+
+.progress-percent {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #10b981;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background-color: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dark .progress-bar {
+  background-color: #4b5563;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: #10b981;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-error {
+  margin-top: 0.5rem;
+  color: #dc2626;
+  font-size: 0.875rem;
+}
+
 /* MOBILE RESPONSIVE STYLES */
 @media (max-width: 768px) {
   .chat-container {
@@ -1116,6 +1307,15 @@
   .send-button svg {
     width: 20px;
     height: 20px;
+  }
+
+  .popular-models-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .download-modal {
+    margin: 1rem;
+    max-height: 90vh;
   }
 }
 
