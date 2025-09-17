@@ -9,6 +9,12 @@ import re
 import uuid
 from datetime import datetime
 import secrets
+import subprocess
+import threading
+import queue
+import time
+import requests
+import sys
 
 app = Flask(__name__, static_folder='static/build', static_url_path='')
 CORS(app, supports_credentials=True)  # Enable credentials for sessions
@@ -24,6 +30,10 @@ os.makedirs('static/build', exist_ok=True)
 
 # Global session store - each session gets its own CharacterChat instance
 chat_sessions = {}
+
+# Model download tracking
+download_progress = {}  # Track download progress per session
+download_threads = {}  # Track active downloads
 
 def get_available_models():
     """Get available models from Ollama and categorize them"""
@@ -55,6 +65,48 @@ def get_available_models():
         print(f"Error getting models from Ollama: {e}")
         return ["wizard-vicuna-uncensored:7b"], ["aha2025/llama-joycaption-beta-one-hf-llava:Q4_K_M"], []
 
+def get_local_models():
+    """Get list of locally installed models using ollama list command"""
+    try:
+        result = subprocess.run(['ollama', 'list'], capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            return []
+        
+        lines = result.stdout.strip().split('\n')
+        models = []
+        
+        # Skip header line
+        for line in lines[1:]:
+            if line.strip():
+                parts = line.split()
+                if len(parts) >= 4:
+                    model_info = {
+                        'name': parts[0],
+                        'id': parts[1] if len(parts) > 1 else 'unknown',
+                        'size': parts[2] if len(parts) > 2 else 'unknown',
+                        'modified': ' '.join(parts[3:]) if len(parts) > 3 else 'unknown'
+                    }
+                    models.append(model_info)
+        
+        return models
+    except Exception as e:
+        print(f"Error getting local models: {e}")
+        return []
+
+def delete_ollama_model(model_name):
+    """Delete a model using ollama rm command"""
+    try:
+        result = subprocess.run(['ollama', 'rm', model_name], capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            return True, f"Successfully deleted {model_name}"
+        else:
+            error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+            return False, f"Failed to delete {model_name}: {error_msg}"
+    except subprocess.TimeoutExpired:
+        return False, f"Timeout while deleting {model_name}"
+    except Exception as e:
+        return False, f"Error deleting {model_name}: {str(e)}"
+
 # Get available models on startup
 chat_models, caption_models, all_models = get_available_models()
 selected_chat_model = chat_models[0] if chat_models else "wizard-vicuna-uncensored:7b"
@@ -77,6 +129,222 @@ def generate_caption(image_path, instruction=default_instruction, model=None):
         }]
     )
     return response["message"]["content"]
+
+def execute_ollama_pull(model_name, session_id, progress_queue):
+    """Execute ollama pull command with improved progress tracking"""
+    try:
+        print(f"Starting download of {model_name} for session {session_id[:8]}...")
+        
+        # Initialize progress
+        download_progress[session_id] = {
+            'status': 'downloading',
+            'model': model_name,
+            'progress': 0,
+            'message': f'Initializing download of {model_name}...',
+            'started_at': time.time()
+        }
+        
+        # Check if ollama is available
+        try:
+            subprocess.run(['ollama', '--version'], check=True, capture_output=True, text=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            download_progress[session_id].update({
+                'status': 'error',
+                'progress': 0,
+                'message': 'Ollama is not installed or not available in PATH'
+            })
+            return
+
+        # Execute ollama pull command with real-time output
+        cmd = ['ollama', 'pull', model_name]
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Redirect stderr to stdout
+            text=True,
+            bufsize=1,  # Line buffered
+            universal_newlines=True,
+            env=os.environ.copy()  # Use current environment
+        )
+        
+        download_progress[session_id].update({
+            'progress': 5,
+            'message': f'Connecting to download {model_name}...'
+        })
+        
+        # Read output line by line in real-time
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            
+            if output:
+                line = output.strip()
+                print(f"Ollama output: {line}")  # Debug output
+                
+                # Parse progress from different output patterns
+                progress_updated = False
+                
+                # Pattern 1: "pulling abc123... 45.2MB/100.5MB"
+                size_match = re.search(r'pulling\s+\w+\.\.\.\s+([\d.]+)\w+/([\d.]+)\w+', line)
+                if size_match:
+                    current = float(size_match.group(1))
+                    total = float(size_match.group(2))
+                    if total > 0:
+                        percent = int((current / total) * 100)
+                        download_progress[session_id].update({
+                            'progress': min(percent, 95),
+                            'message': f'Downloading {model_name}... {current:.1f}/{total:.1f}MB'
+                        })
+                        progress_updated = True
+
+                # Pattern 2: Direct percentage "45%"
+                if not progress_updated:
+                    percent_match = re.search(r'(\d+)%', line)
+                    if percent_match:
+                        percent = int(percent_match.group(1))
+                        download_progress[session_id].update({
+                            'progress': min(percent, 95),
+                            'message': f'Downloading {model_name}... {percent}%'
+                        })
+                        progress_updated = True
+
+                # Pattern 3: Status messages
+                if not progress_updated:
+                    if 'pulling manifest' in line.lower():
+                        download_progress[session_id].update({
+                            'progress': 10,
+                            'message': f'Fetching {model_name} manifest...'
+                        })
+                    elif 'pulling' in line.lower() and 'config' in line.lower():
+                        download_progress[session_id].update({
+                            'progress': 15,
+                            'message': f'Downloading {model_name} configuration...'
+                        })
+                    elif 'verifying' in line.lower():
+                        download_progress[session_id].update({
+                            'progress': 90,
+                            'message': f'Verifying {model_name}...'
+                        })
+                    elif 'success' in line.lower() or 'complete' in line.lower():
+                        download_progress[session_id].update({
+                            'status': 'completed',
+                            'progress': 100,
+                            'message': f'Successfully downloaded {model_name}!'
+                        })
+
+        # Check final status
+        return_code = process.poll()
+        if return_code == 0:
+            download_progress[session_id].update({
+                'status': 'completed',
+                'progress': 100,
+                'message': f'Successfully downloaded {model_name}!'
+            })
+            print(f"✅ Successfully downloaded {model_name}")
+            
+            # Refresh global model lists
+            global chat_models, caption_models, all_models
+            try:
+                chat_models, caption_models, all_models = get_available_models()
+                print(f"📋 Updated model lists: {len(all_models)} total models")
+            except:
+                pass
+                
+        else:
+            # Get any error output
+            try:
+                error_output = process.stdout.read() if process.stdout else "Unknown error"
+            except:
+                error_output = "Failed to read error output"
+            
+            download_progress[session_id].update({
+                'status': 'error',
+                'progress': 0,
+                'message': f'Failed to download {model_name}: {error_output[:200]}'
+            })
+            print(f"❌ Failed to download {model_name}: {error_output}")
+            
+    except Exception as e:
+        error_msg = str(e)
+        download_progress[session_id].update({
+            'status': 'error',
+            'progress': 0,
+            'message': f'Error downloading {model_name}: {error_msg}'
+        })
+        print(f"🚨 Exception during download: {e}")
+    finally:
+        # Clean up thread tracking
+        if session_id in download_threads:
+            del download_threads[session_id]
+
+def download_model_via_api(model_name, session_id):
+    """Alternative method using Ollama's REST API"""
+    try:
+        download_progress[session_id] = {
+            'status': 'downloading',
+            'model': model_name,
+            'progress': 0,
+            'message': f'Starting API download of {model_name}...',
+            'started_at': time.time()
+        }
+        
+        # Use Ollama's REST API
+        url = 'http://localhost:11434/api/pull'
+        payload = {'name': model_name, 'stream': True}
+        
+        response = requests.post(url, json=payload, stream=True, timeout=30)
+        
+        if response.status_code != 200:
+            download_progress[session_id].update({
+                'status': 'error',
+                'message': f'API Error: {response.status_code}'
+            })
+            return
+            
+        for line in response.iter_lines():
+            if line:
+                try:
+                    data = json.loads(line.decode('utf-8'))
+                    
+                    if 'status' in data:
+                        status = data['status']
+                        if 'completed' in data and 'total' in data and data['total'] > 0:
+                            progress = int((data['completed'] / data['total']) * 100)
+                            download_progress[session_id].update({
+                                'progress': progress,
+                                'message': f'{status}: {progress}%'
+                            })
+                        else:
+                            download_progress[session_id].update({
+                                'message': status
+                            })
+                            
+                    if data.get('status') == 'success':
+                        download_progress[session_id].update({
+                            'status': 'completed',
+                            'progress': 100,
+                            'message': f'Successfully downloaded {model_name}!'
+                        })
+                        break
+                        
+                except json.JSONDecodeError:
+                    continue
+                    
+    except requests.exceptions.ConnectionError:
+        download_progress[session_id].update({
+            'status': 'error',
+            'message': 'Cannot connect to Ollama server. Is it running?'
+        })
+    except Exception as e:
+        download_progress[session_id].update({
+            'status': 'error',
+            'message': f'API Error: {str(e)}'
+        })
+    finally:
+        # Clean up thread tracking
+        if session_id in download_threads:
+            del download_threads[session_id]
 
 class CharacterChat:
     def __init__(self, character_file="characters.json"):
@@ -234,7 +502,7 @@ def serve_react_app():
         return send_from_directory(app.static_folder, 'index.html')
     except FileNotFoundError:
         return """
-        <h1>React Build Not Found</h1>
+        <h1>React Build Not Found</h1>  
         <p>Please build the React app first:</p>
         <ol>
             <li>cd frontend</li>
@@ -459,6 +727,294 @@ def toggle_dark_mode():
     """Toggle dark mode (client-side only, no server state needed)"""
     return jsonify({'success': True, 'message': 'Dark mode toggled'})
 
+# ================================
+# MODEL MANAGEMENT API ROUTES
+# ================================
+
+@app.route('/api/models/list', methods=['GET'])
+def api_list_models():
+    """Get list of locally installed models"""
+    try:
+        models = get_local_models()
+        return jsonify({
+            'success': True,
+            'models': models,
+            'count': len(models)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error listing models: {str(e)}',
+            'models': []
+        })
+
+@app.route('/api/models/delete', methods=['POST'])
+def api_delete_model():
+    """Delete a locally installed model"""
+    data = request.get_json()
+    model_name = data.get('model_name', '').strip()
+    
+    if not model_name:
+        return jsonify({'success': False, 'message': 'Model name is required'})
+    
+    try:
+        success, message = delete_ollama_model(model_name)
+        
+        if success:
+            # Refresh global model lists after deletion
+            global chat_models, caption_models, all_models
+            chat_models, caption_models, all_models = get_available_models()
+        
+        return jsonify({
+            'success': success,
+            'message': message
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error deleting model: {str(e)}'
+        })
+
+@app.route('/api/models/stats', methods=['GET'])
+def api_model_stats():
+    """Get model statistics and system info"""
+    try:
+        models = get_local_models()
+        total_models = len(models)
+        
+        # Calculate total size (rough estimate)
+        total_size = 0
+        for model in models:
+            try:
+                size_str = model.get('size', '0B')
+                if 'GB' in size_str:
+                    total_size += float(size_str.replace('GB', '').strip())
+                elif 'MB' in size_str:
+                    total_size += float(size_str.replace('MB', '').strip()) / 1024
+            except:
+                pass
+        
+        # Check if ollama is running
+        try:
+            result = subprocess.run(['ollama', 'ps'], capture_output=True, text=True, timeout=5)
+            running_models = []
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                for line in lines[1:]:  # Skip header
+                    if line.strip():
+                        parts = line.split()
+                        if parts:
+                            running_models.append(parts[0])
+        except:
+            running_models = []
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_models': total_models,
+                'total_size_gb': round(total_size, 2),
+                'running_models': running_models,
+                'running_count': len(running_models)
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error getting stats: {str(e)}'
+        })
+
+@app.route('/api/test_ollama', methods=['GET'])
+def test_ollama():
+    """Test ollama installation and basic functionality"""
+    try:
+        # Test 1: Check if ollama is installed
+        result = subprocess.run(['ollama', '--version'], capture_output=True, text=True, timeout=5)
+        version_info = result.stdout.strip() if result.returncode == 0 else "Not available"
+        
+        # Test 2: Check if ollama server is running
+        try:
+            list_result = subprocess.run(['ollama', 'list'], capture_output=True, text=True, timeout=10)
+            server_running = list_result.returncode == 0
+            current_models = list_result.stdout if server_running else "Server not running"
+        except subprocess.TimeoutExpired:
+            server_running = False
+            current_models = "Timeout - server may be starting"
+        
+        return jsonify({
+            'success': True,
+            'ollama_version': version_info,
+            'server_running': server_running,
+            'current_models': current_models,
+            'system_info': {
+                'python_version': f"{sys.version_info.major}.{sys.version_info.minor}",
+                'platform': os.name
+            }
+        })
+        
+    except FileNotFoundError:
+        return jsonify({
+            'success': False,
+            'error': 'Ollama is not installed or not in PATH',
+            'suggestion': 'Please install Ollama from https://ollama.com/download'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error testing Ollama: {str(e)}'
+        })
+
+@app.route('/api/download_model', methods=['POST'])
+def download_model():
+    """Start downloading a model with improved error handling"""
+    session_id = get_session_id()
+    data = request.get_json()
+    model_name = data.get('model_name', '').strip()
+    
+    if not model_name:
+        return jsonify({'success': False, 'message': 'Model name is required'})
+    
+    # Check if already downloading
+    if session_id in download_threads and download_threads[session_id].is_alive():
+        return jsonify({'success': False, 'message': 'A download is already in progress'})
+    
+    # Enhanced model name validation
+    if not re.match(r'^[a-zA-Z0-9._:-]+$', model_name):
+        return jsonify({'success': False, 'message': 'Invalid model name format. Use only letters, numbers, dots, hyphens, and colons.'})
+    
+    # Test ollama availability
+    try:
+        result = subprocess.run(['ollama', '--version'], capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            return jsonify({'success': False, 'message': 'Ollama is not working properly'})
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        return jsonify({'success': False, 'message': 'Ollama is not installed or not available. Please install Ollama first.'})
+    
+    try:
+        # Start download in background thread
+        progress_queue = queue.Queue()
+        
+        # Try CLI method first, fallback to API
+        download_method = data.get('method', 'cli')  # Default to CLI
+        if download_method == 'api':
+            download_thread = threading.Thread(
+                target=download_model_via_api,
+                args=(model_name, session_id),
+                daemon=True
+            )
+        else:
+            download_thread = threading.Thread(
+                target=execute_ollama_pull,
+                args=(model_name, session_id, progress_queue),
+                daemon=True
+            )
+        
+        download_thread.start()
+        
+        # Track the thread
+        download_threads[session_id] = download_thread
+        
+        print(f"🚀 Started download thread for {model_name} using {download_method} method")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Started downloading {model_name}',
+            'model_name': model_name,
+            'method': download_method
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Failed to start download: {str(e)}'})
+
+@app.route('/api/download_progress', methods=['GET'])
+def get_download_progress():
+    """Get download progress for current session"""
+    session_id = get_session_id()
+    
+    if session_id in download_progress:
+        progress_data = download_progress[session_id].copy()
+        
+        # Clean up completed or errored downloads after some time
+        if progress_data['status'] in ['completed', 'error']:
+            elapsed = time.time() - progress_data.get('started_at', 0)
+            if elapsed > 30:  # Clean up after 30 seconds
+                del download_progress[session_id]
+        
+        return jsonify({
+            'success': True,
+            'progress': progress_data
+        })
+    else:
+        return jsonify({
+            'success': True,
+            'progress': None
+        })
+
+@app.route('/api/cancel_download', methods=['POST'])
+def cancel_download():
+    """Cancel ongoing download"""
+    session_id = get_session_id()
+    
+    # Clean up progress tracking
+    if session_id in download_progress:
+        del download_progress[session_id]
+    
+    # Note: We can't easily kill the ollama pull process, so we just clean up tracking
+    if session_id in download_threads:
+        del download_threads[session_id]
+    
+    return jsonify({'success': True, 'message': 'Download cancelled'})
+
+@app.route('/api/get_popular_models', methods=['GET'])
+def get_popular_models():
+    """Get list of popular models for suggestions"""
+    popular_models = [
+        {
+            'name': 'llama3.2:3b',
+            'description': 'Latest Llama model, 3B parameters - Fast and efficient',
+            'size': '2.0GB'
+        },
+        {
+            'name': 'llama3.2:1b',
+            'description': 'Smallest Llama model, 1B parameters - Very fast',
+            'size': '1.3GB'
+        },
+        {
+            'name': 'phi3:mini',
+            'description': 'Microsoft Phi-3 Mini - Compact and capable',
+            'size': '2.3GB'
+        },
+        {
+            'name': 'gemma2:2b',
+            'description': 'Google Gemma 2B - Balanced performance',
+            'size': '1.6GB'
+        },
+        {
+            'name': 'qwen2.5:3b',
+            'description': 'Alibaba Qwen 2.5 - Multilingual support',
+            'size': '2.0GB'
+        },
+        {
+            'name': 'llava:7b',
+            'description': 'Vision model - Can analyze images',
+            'size': '4.7GB'
+        },
+        {
+            'name': 'codellama:7b',
+            'description': 'Specialized for code generation',
+            'size': '3.8GB'
+        },
+        {
+            'name': 'mistral:7b',
+            'description': 'Mistral 7B - Excellent general purpose model',
+            'size': '4.1GB'
+        }
+    ]
+    
+    return jsonify({
+        'success': True,
+        'models': popular_models
+    })
+
 # Session cleanup on app context teardown
 @app.teardown_appcontext
 def cleanup_session(error):
@@ -466,11 +1022,14 @@ def cleanup_session(error):
     pass
 
 if __name__ == '__main__':
-    print("=== Ollama Chat UI with Multi-User Session Management ===")
+    print("=== Ollama Chat UI with Multi-User Session Management & Complete Model Management ===")
     print(f"Available Chat Models ({len(chat_models)}): {chat_models}")
     print(f"Available Caption Models ({len(caption_models)}): {caption_models}")
     print(f"Default Chat Model: {selected_chat_model}")
     print(f"Default Image Model: {selected_image_model}")
     print("🚀 Starting Flask server with session support on http://localhost:5000")
     print("👥 Multiple users can now use the app simultaneously without interference")
+    print("📥 Users can download new models directly from the interface")
+    print("🗂️ Complete model management: list, download, delete with persistent progress")
+    print("🔧 Use the TEST OLLAMA button to debug download issues")
     app.run(debug=True, host='0.0.0.0', port=5000)

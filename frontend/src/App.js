@@ -7,6 +7,529 @@ import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
+// Model Management Modal Component
+function ModelManagerModal({ onClose }) {
+  const [models, setModels] = useState([]);
+  const [modelStats, setModelStats] = useState(null);
+  const [downloadInput, setDownloadInput] = useState('');
+  const [downloadProgress, setDownloadProgress] = useState(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [popularModels, setPopularModels] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('installed'); // 'installed', 'download'
+
+  useEffect(() => {
+    fetchModels();
+    fetchStats();
+    fetchPopularModels();
+    checkDownloadProgress();
+  }, []);
+
+  // Check for ongoing downloads every second
+  useEffect(() => {
+    let progressInterval;
+    
+    if (isDownloading || downloadProgress?.status === 'downloading') {
+      progressInterval = setInterval(() => {
+        checkDownloadProgress();
+      }, 1000);
+    }
+    
+    return () => {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+    };
+  }, [isDownloading, downloadProgress]);
+
+  const fetchModels = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/models/list`, {
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (data.success) {
+        setModels(data.models);
+      }
+    } catch (error) {
+      console.error('Failed to fetch models:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/models/stats`, {
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (data.success) {
+        setModelStats(data.stats);
+      }
+    } catch (error) {
+      console.error('Failed to fetch stats:', error);
+    }
+  };
+
+  const fetchPopularModels = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/get_popular_models`, {
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (data.success) {
+        setPopularModels(data.models);
+      }
+    } catch (error) {
+      console.error('Failed to fetch popular models:', error);
+    }
+  };
+
+  const checkDownloadProgress = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/download_progress`, {
+        credentials: 'include'
+      });
+      const data = await response.json();
+      
+      if (data.success && data.progress) {
+        setDownloadProgress(data.progress);
+        setIsDownloading(data.progress.status === 'downloading');
+        
+        if (data.progress.status === 'completed') {
+          setIsDownloading(false);
+          setTimeout(() => {
+            setDownloadProgress(null);
+            fetchModels();
+            fetchStats();
+          }, 3000);
+        } else if (data.progress.status === 'error') {
+          setIsDownloading(false);
+        }
+      } else {
+        if (!isDownloading) {
+          setDownloadProgress(null);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch download progress:', error);
+    }
+  };
+
+  const handleDownload = async (modelName) => {
+    if (!modelName.trim()) {
+      alert('Please enter a model name');
+      return;
+    }
+
+    setIsDownloading(true);
+    setDownloadProgress({ status: 'starting', progress: 0, message: 'Starting download...' });
+
+    try {
+      const response = await fetch(`${API_BASE}/download_model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ model_name: modelName.trim() })
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        alert(data.message);
+        setIsDownloading(false);
+        setDownloadProgress(null);
+      } else {
+        setDownloadInput('');
+      }
+    } catch (error) {
+      console.error('Failed to start download:', error);
+      alert('Failed to start download');
+      setIsDownloading(false);
+      setDownloadProgress(null);
+    }
+  };
+
+  const handleDelete = async (modelName) => {
+    if (!window.confirm(`Are you sure you want to delete "${modelName}"?\n\nThis action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/models/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ model_name: modelName })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchModels();
+        fetchStats();
+        alert(`Successfully deleted "${modelName}"`);
+      } else {
+        alert(`Failed to delete "${modelName}": ${data.message}`);
+      }
+    } catch (error) {
+      console.error('Failed to delete model:', error);
+      alert('Failed to delete model');
+    }
+  };
+
+  const selectPopularModel = (model) => {
+    setDownloadInput(model.name);
+    setActiveTab('download');
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal model-manager-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>🗂️ Model Manager</h2>
+          <button className="close-btn" onClick={onClose}>✕</button>
+        </div>
+
+        {/* Stats Section */}
+        {modelStats && (
+          <div className="model-stats">
+            <div className="stat-item">
+              <span className="stat-label">Total Models:</span>
+              <span className="stat-value">{modelStats.total_models}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Total Size:</span>
+              <span className="stat-value">{modelStats.total_size_gb} GB</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Running:</span>
+              <span className="stat-value">{modelStats.running_count}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Progress Section - Always visible if downloading */}
+        {downloadProgress && (
+          <div className="download-progress-section">
+            <div className="progress-header">
+              <span className="progress-title">📥 Download Progress</span>
+              <span className="progress-percentage">{downloadProgress.progress}%</span>
+            </div>
+            <div className="progress-bar">
+              <div 
+                className="progress-fill" 
+                style={{ width: `${downloadProgress.progress}%` }}
+              />
+            </div>
+            <div className="progress-message">{downloadProgress.message}</div>
+            {downloadProgress.status === 'error' && (
+              <div className="progress-error">Download failed. Please try again.</div>
+            )}
+          </div>
+        )}
+
+        {/* Tab Navigation */}
+        <div className="tab-navigation">
+          <button 
+            className={`tab-button ${activeTab === 'installed' ? 'active' : ''}`}
+            onClick={() => setActiveTab('installed')}
+          >
+            📱 Installed Models ({models.length})
+          </button>
+          <button 
+            className={`tab-button ${activeTab === 'download' ? 'active' : ''}`}
+            onClick={() => setActiveTab('download')}
+          >
+            📥 Download Models
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div className="tab-content">
+          {activeTab === 'installed' && (
+            <div className="installed-models-tab">
+              {loading ? (
+                <div className="loading">Loading models...</div>
+              ) : models.length === 0 ? (
+                <div className="no-models">
+                  <p>No models installed yet.</p>
+                  <p>Switch to "Download Models" tab to get started!</p>
+                </div>
+              ) : (
+                <div className="models-list">
+                  {models.map((model, index) => (
+                    <div key={index} className="model-item">
+                      <div className="model-info">
+                        <div className="model-name">{model.name}</div>
+                        <div className="model-details">
+                          <span className="model-size">{model.size}</span>
+                          <span className="model-modified">Modified: {model.modified}</span>
+                        </div>
+                      </div>
+                      <button 
+                        className="delete-btn"
+                        onClick={() => handleDelete(model.name)}
+                        title={`Delete ${model.name}`}
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'download' && (
+            <div className="download-models-tab">
+              {/* Manual Download */}
+              <div className="manual-download">
+                <h3>Download by Name</h3>
+                <div className="download-input-group">
+                  <input
+                    type="text"
+                    value={downloadInput}
+                    onChange={(e) => setDownloadInput(e.target.value)}
+                    placeholder="e.g., llama3.2:3b, phi3:mini"
+                    disabled={isDownloading}
+                    className="download-input"
+                  />
+                  <button 
+                    onClick={() => handleDownload(downloadInput)}
+                    disabled={isDownloading || !downloadInput.trim()}
+                    className="download-btn"
+                  >
+                    {isDownloading ? '⏳ Downloading...' : '📥 Download'}
+                  </button>
+                </div>
+                <div className="download-help">
+                  Enter the full model name with tag. Check{' '}
+                  <a href="https://ollama.com/library" target="_blank" rel="noopener noreferrer">
+                    ollama.com/library
+                  </a>{' '}
+                  for available models.
+                </div>
+              </div>
+
+              {/* Popular Models */}
+              <div className="popular-models">
+                <h3>Popular Models</h3>
+                <div className="popular-models-grid">
+                  {popularModels.map((model, index) => (
+                    <div 
+                      key={index} 
+                      className="popular-model-card"
+                      onClick={() => selectPopularModel(model)}
+                    >
+                      <div className="model-name">{model.name}</div>
+                      <div className="model-description">{model.description}</div>
+                      <div className="model-size">Size: {model.size}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Model Download Modal Component
+function ModelDownloadModal({ onClose }) {
+  const [modelName, setModelName] = useState('');
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(null);
+  const [popularModels, setPopularModels] = useState([]);
+  const [showPopular, setShowPopular] = useState(true);
+
+  useEffect(() => {
+    // Fetch popular models
+    const fetchPopularModels = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/get_popular_models`, {
+          credentials: 'include'
+        });
+        const data = await response.json();
+        if (data.success) {
+          setPopularModels(data.models);
+        }
+      } catch (error) {
+        console.error('Failed to fetch popular models:', error);
+      }
+    };
+    
+    fetchPopularModels();
+  }, []);
+
+  useEffect(() => {
+    let progressInterval;
+    
+    if (isDownloading) {
+      progressInterval = setInterval(async () => {
+        try {
+          const response = await fetch(`${API_BASE}/download_progress`, {
+            credentials: 'include'
+          });
+          const data = await response.json();
+          
+          if (data.success && data.progress) {
+            setDownloadProgress(data.progress);
+            
+            if (data.progress.status === 'completed') {
+              setIsDownloading(false);
+              setTimeout(() => {
+                setDownloadProgress(null);
+                onClose();
+                window.location.reload(); // Refresh to update model lists
+              }, 2000);
+            } else if (data.progress.status === 'error') {
+              setIsDownloading(false);
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch download progress:', error);
+        }
+      }, 1000);
+    }
+    
+    return () => {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+    };
+  }, [isDownloading, onClose]);
+
+  const handleDownload = async () => {
+    if (!modelName.trim()) {
+      alert('Please enter a model name');
+      return;
+    }
+
+    setIsDownloading(true);
+    setDownloadProgress({ status: 'starting', progress: 0, message: 'Starting download...' });
+
+    try {
+      const response = await fetch(`${API_BASE}/download_model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ model_name: modelName.trim() })
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        alert(data.message);
+        setIsDownloading(false);
+        setDownloadProgress(null);
+      }
+    } catch (error) {
+      console.error('Failed to start download:', error);
+      alert('Failed to start download');
+      setIsDownloading(false);
+      setDownloadProgress(null);
+    }
+  };
+
+  const handleCancel = async () => {
+    try {
+      await fetch(`${API_BASE}/cancel_download`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      setIsDownloading(false);
+      setDownloadProgress(null);
+    } catch (error) {
+      console.error('Failed to cancel download:', error);
+    }
+  };
+
+  const selectModel = (model) => {
+    setModelName(model.name);
+    setShowPopular(false);
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal download-modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Download Ollama Model</h2>
+        
+        {!isDownloading && showPopular && (
+          <div className="popular-models">
+            <h3>Popular Models</h3>
+            <div className="popular-models-grid">
+              {popularModels.map((model, index) => (
+                <div 
+                  key={index} 
+                  className="popular-model-card"
+                  onClick={() => selectModel(model)}
+                >
+                  <div className="model-name">{model.name}</div>
+                  <div className="model-description">{model.description}</div>
+                  <div className="model-size">Size: {model.size}</div>
+                </div>
+              ))}
+            </div>
+            <div className="modal-divider">
+              <span>OR</span>
+            </div>
+          </div>
+        )}
+
+        <div className="form-group">
+          <label>Model Name</label>
+          <input
+            type="text"
+            value={modelName}
+            onChange={(e) => setModelName(e.target.value)}
+            placeholder="e.g., llama3.2:3b, phi3:mini, gemma2:2b"
+            disabled={isDownloading}
+          />
+          <div className="model-name-help">
+            Enter the full model name with tag (e.g., llama3.2:3b). 
+            Check <a href="https://ollama.com/library" target="_blank" rel="noopener noreferrer">ollama.com/library</a> for available models.
+          </div>
+        </div>
+
+        {downloadProgress && (
+          <div className="download-progress">
+            <div className="progress-info">
+              <div className="progress-message">{downloadProgress.message}</div>
+              <div className="progress-percent">{downloadProgress.progress}%</div>
+            </div>
+            <div className="progress-bar">
+              <div 
+                className="progress-fill" 
+                style={{ width: `${downloadProgress.progress}%` }}
+              />
+            </div>
+            {downloadProgress.status === 'error' && (
+              <div className="progress-error">
+                Download failed. Please try again.
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="modal-actions">
+          {isDownloading ? (
+            <>
+              <button type="button" onClick={handleCancel}>Cancel</button>
+              <button type="button" disabled>Downloading...</button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={onClose}>Close</button>
+              <button type="button" onClick={handleDownload}>Download</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatApp() {
   // State management
   const [messages, setMessages] = useState([]);
@@ -28,11 +551,14 @@ export default function ChatApp() {
   
   // UI State
   const [showCreateCharacterModal, setShowCreateCharacterModal] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [showModelManager, setShowModelManager] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState('');
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   
   // Session Management
   const [sessionId, setSessionId] = useState(null);
+  const [ollamaStatus, setOllamaStatus] = useState(null);
   
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -300,6 +826,27 @@ export default function ChatApp() {
     }
   };
 
+  const testOllama = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/test_ollama`, {
+        credentials: 'include'
+      });
+      const data = await response.json();
+      setOllamaStatus(data);
+      console.log('Ollama Status:', data);
+      
+      // Show detailed status
+      const statusMessage = data.success 
+        ? `✅ Ollama Status:\nVersion: ${data.ollama_version}\nServer Running: ${data.server_running ? 'Yes' : 'No'}\nCurrent Models:\n${data.current_models}`
+        : `❌ Ollama Error:\n${data.error}\n\nSuggestion: ${data.suggestion || 'Check Ollama installation'}`;
+      
+      alert(statusMessage);
+    } catch (error) {
+      console.error('Failed to test Ollama:', error);
+      alert('Failed to test Ollama connection. Check if Flask server is running.');
+    }
+  };
+
   return (
     <div className={`chat-app ${isDarkMode ? 'dark' : ''}`}>
       {/* Mobile Sidebar Overlay */}
@@ -412,6 +959,36 @@ export default function ChatApp() {
           >
             CREATE CHARACTER
           </button>
+
+          <button 
+            className="action-button"
+            onClick={() => {
+              setShowModelManager(true);
+              setShowMobileSidebar(false);
+            }}
+          >
+            🗂️ MANAGE MODELS
+          </button>
+
+          <button 
+            className="action-button"
+            onClick={() => {
+              setShowDownloadModal(true);
+              setShowMobileSidebar(false);
+            }}
+          >
+            📥 DOWNLOAD MODEL
+          </button>
+
+          <button 
+            className="action-button"
+            onClick={() => {
+              testOllama();
+              setShowMobileSidebar(false);
+            }}
+          >
+            🔧 TEST OLLAMA
+          </button>
           
           <button 
             className="action-button reset-button" 
@@ -435,7 +1012,11 @@ export default function ChatApp() {
           </div>
 
           {/* Session Info (for debugging) */}
-          
+          {sessionId && (
+            <div style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: 'auto', paddingTop: '1rem' }}>
+              Session: {sessionId.substring(0, 8)}...
+            </div>
+          )}
         </aside>
 
         {/* Main Chat Area */}
@@ -455,7 +1036,7 @@ export default function ChatApp() {
           <div className="messages-container">
             {messages.length === 0 ? (
               <div className="welcome-message">
-                <p>👋 Welcome to AI Chat App</p>
+                <p>👋 Welcome to Ollama Chat UI!</p>
                 <p>Select a character and start chatting</p>
                 {sessionId && (
                   <p style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '1rem' }}>
@@ -555,6 +1136,20 @@ export default function ChatApp() {
         <CharacterModal 
           onClose={() => setShowCreateCharacterModal(false)}
           onSubmit={createCharacter}
+        />
+      )}
+
+      {/* Model Download Modal */}
+      {showDownloadModal && (
+        <ModelDownloadModal 
+          onClose={() => setShowDownloadModal(false)}
+        />
+      )}
+
+      {/* Model Manager Modal */}
+      {showModelManager && (
+        <ModelManagerModal 
+          onClose={() => setShowModelManager(false)}
         />
       )}
     </div>
