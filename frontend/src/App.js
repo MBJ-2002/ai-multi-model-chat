@@ -7,6 +7,326 @@ import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
+// Character Management Modal Component
+function CharacterManagerModal({ onClose }) {
+  const [characters, setCharacters] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('manage'); // 'manage', 'create'
+  const [editingCharacter, setEditingCharacter] = useState(null);
+  const [formData, setFormData] = useState({
+    key: '',
+    name: '',
+    role: '',
+    system_prompt: '',
+    image_caption_prompt: '',
+    user_profile: ''
+  });
+
+  useEffect(() => {
+    fetchCharacters();
+  }, []);
+
+  const fetchCharacters = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/characters`, {
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (data.success) {
+        setCharacters(data.characters);
+      }
+    } catch (error) {
+      console.error('Failed to fetch characters:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEdit = (character) => {
+    setEditingCharacter(character);
+    setFormData({
+      key: character.key,
+      name: character.name,
+      role: character.role,
+      system_prompt: character.system_prompt,
+      image_caption_prompt: character.image_caption_prompt,
+      user_profile: character.user_profile || ''
+    });
+    setActiveTab('create');
+  };
+
+  const handleDelete = async (character) => {
+    if (!window.confirm(`Are you sure you want to delete "${character.name}"?\n\nThis action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/characters/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ key: character.key })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchCharacters();
+        alert(`Successfully deleted "${character.name}"`);
+      } else {
+        alert(`Failed to delete "${character.name}": ${data.message}`);
+      }
+    } catch (error) {
+      console.error('Failed to delete character:', error);
+      alert('Failed to delete character');
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!formData.name.trim()) {
+      alert('Character name is required');
+      return;
+    }
+
+    try {
+      const endpoint = editingCharacter ? '/characters/edit' : '/create_character';
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(formData)
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchCharacters();
+        resetForm();
+        setActiveTab('manage');
+        alert(data.message);
+      } else {
+        alert(data.message);
+      }
+    } catch (error) {
+      console.error('Failed to save character:', error);
+      alert('Failed to save character');
+    }
+  };
+
+  const resetForm = () => {
+    setEditingCharacter(null);
+    setFormData({
+      key: '',
+      name: '',
+      role: '',
+      system_prompt: '',
+      image_caption_prompt: '',
+      user_profile: ''
+    });
+  };
+
+  const handleNewCharacter = () => {
+    resetForm();
+    setActiveTab('create');
+  };
+
+  const isDefaultCharacter = (key) => {
+    return ['assistant', 'creative_writer', 'code_helper', 'researcher'].includes(key);
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal character-manager-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>🎭 Character Manager</h2>
+          <button className="close-btn" onClick={onClose}>✕</button>
+        </div>
+
+        {/* Character Stats */}
+        <div className="character-stats">
+          <div className="stat-item">
+            <span className="stat-label">Total Characters:</span>
+            <span className="stat-value">{characters.length}</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Custom Characters:</span>
+            <span className="stat-value">{characters.filter(c => !isDefaultCharacter(c.key)).length}</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Default Characters:</span>
+            <span className="stat-value">{characters.filter(c => isDefaultCharacter(c.key)).length}</span>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="tab-navigation">
+          <button 
+            className={`tab-button ${activeTab === 'manage' ? 'active' : ''}`}
+            onClick={() => setActiveTab('manage')}
+          >
+            🎭 Manage Characters ({characters.length})
+          </button>
+          <button 
+            className={`tab-button ${activeTab === 'create' ? 'active' : ''}`}
+            onClick={() => setActiveTab('create')}
+          >
+            {editingCharacter ? '✏️ Edit Character' : '➕ Create Character'}
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div className="tab-content">
+          {activeTab === 'manage' && (
+            <div className="manage-characters-tab">
+              {loading ? (
+                <div className="loading">Loading characters...</div>
+              ) : characters.length === 0 ? (
+                <div className="no-characters">
+                  <p>No characters found.</p>
+                  <p>Create your first character to get started!</p>
+                </div>
+              ) : (
+                <div className="characters-list">
+                  <div className="characters-header">
+                    <button 
+                      className="new-character-btn"
+                      onClick={handleNewCharacter}
+                    >
+                      ➕ New Character
+                    </button>
+                  </div>
+                  
+                  {characters.map((character, index) => (
+                    <div key={character.key} className="character-item">
+                      <div className="character-info">
+                        <div className="character-header">
+                          <div className="character-name">{character.name}</div>
+                          <div className="character-badges">
+                            {isDefaultCharacter(character.key) && (
+                              <span className="default-badge">Default</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="character-role">{character.role}</div>
+                        <div className="character-prompt-preview">
+                          {character.system_prompt?.substring(0, 100)}
+                          {character.system_prompt?.length > 100 && '...'}
+                        </div>
+                      </div>
+                      <div className="character-actions">
+                        <button 
+                          className="edit-btn"
+                          onClick={() => handleEdit(character)}
+                          title={`Edit ${character.name}`}
+                        >
+                          ✏️
+                        </button>
+                        {!isDefaultCharacter(character.key) && (
+                          <button 
+                            className="delete-btn"
+                            onClick={() => handleDelete(character)}
+                            title={`Delete ${character.name}`}
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'create' && (
+            <div className="create-character-tab">
+              <form onSubmit={handleSubmit} className="character-form">
+                <div className="form-header">
+                  <h3>{editingCharacter ? 'Edit Character' : 'Create New Character'}</h3>
+                  {editingCharacter && (
+                    <button 
+                      type="button" 
+                      className="cancel-edit-btn"
+                      onClick={() => {
+                        resetForm();
+                        setActiveTab('manage');
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Character Name *</label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData({...formData, name: e.target.value})}
+                      placeholder="Enter character name"
+                      required
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label>Role/Title</label>
+                    <input
+                      type="text"
+                      value={formData.role}
+                      onChange={(e) => setFormData({...formData, role: e.target.value})}
+                      placeholder="e.g., Creative Writer, Code Helper"
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>System Prompt</label>
+                  <textarea
+                    value={formData.system_prompt}
+                    onChange={(e) => setFormData({...formData, system_prompt: e.target.value})}
+                    placeholder="Define the character's personality, behavior, and instructions..."
+                    rows="4"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Image Caption Prompt</label>
+                  <textarea
+                    value={formData.image_caption_prompt}
+                    onChange={(e) => setFormData({...formData, image_caption_prompt: e.target.value})}
+                    placeholder="How should this character describe images?"
+                    rows="2"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>User Profile (Optional)</label>
+                  <textarea
+                    value={formData.user_profile}
+                    onChange={(e) => setFormData({...formData, user_profile: e.target.value})}
+                    placeholder="Special instructions about how to treat the user..."
+                    rows="2"
+                  />
+                </div>
+
+                <div className="form-actions">
+                  <button type="button" onClick={() => setActiveTab('manage')}>
+                    Cancel
+                  </button>
+                  <button type="submit">
+                    {editingCharacter ? 'Update Character' : 'Create Character'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Model Management Modal Component
 function ModelManagerModal({ onClose }) {
   const [models, setModels] = useState([]);
@@ -553,6 +873,7 @@ export default function ChatApp() {
   const [showCreateCharacterModal, setShowCreateCharacterModal] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showModelManager, setShowModelManager] = useState(false);
+  const [showCharacterManager, setShowCharacterManager] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState('');
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   
@@ -953,11 +1274,11 @@ export default function ChatApp() {
           <button 
             className="action-button"
             onClick={() => {
-              setShowCreateCharacterModal(true);
+              setShowCharacterManager(true);
               setShowMobileSidebar(false);
             }}
           >
-            CREATE CHARACTER
+            🎭 MANAGE CHARACTERS
           </button>
 
           <button 
@@ -1012,11 +1333,7 @@ export default function ChatApp() {
           </div>
 
           {/* Session Info (for debugging) */}
-          {sessionId && (
-            <div style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: 'auto', paddingTop: '1rem' }}>
-              Session: {sessionId.substring(0, 8)}...
-            </div>
-          )}
+          
         </aside>
 
         {/* Main Chat Area */}
@@ -1036,7 +1353,7 @@ export default function ChatApp() {
           <div className="messages-container">
             {messages.length === 0 ? (
               <div className="welcome-message">
-                <p>👋 Welcome to Ollama Chat UI!</p>
+                <p>👋 Welcome to AI multimodel chat!</p>
                 <p>Select a character and start chatting</p>
                 {sessionId && (
                   <p style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '1rem' }}>
@@ -1150,6 +1467,13 @@ export default function ChatApp() {
       {showModelManager && (
         <ModelManagerModal 
           onClose={() => setShowModelManager(false)}
+        />
+      )}
+
+      {/* Character Manager Modal */}
+      {showCharacterManager && (
+        <CharacterManagerModal 
+          onClose={() => setShowCharacterManager(false)}
         />
       )}
     </div>
