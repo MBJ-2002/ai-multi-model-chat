@@ -634,31 +634,49 @@ def select_character():
 
 @app.route('/api/create_character', methods=['POST'])
 def create_character():
-    """Create character for current session"""
+    """Create or update character for current session"""
     chat = get_chat_session()
     data = request.get_json()
+    
+    key = data.get('key', '').strip()  # If provided, we're editing
     name = data.get('name', '').strip()
     description = data.get('description', '').strip()
     image_caption_prompt = data.get('image_caption_prompt', '').strip()
     
     if not name:
         return jsonify({'success': False, 'message': 'Character name is required'})
-    
+
     try:
-        character_key = chat.add_character(name, description, image_caption_prompt)
-        # Reload characters for all sessions (since they share the same file)
+        if key:
+            # Edit existing character
+            if key not in chat.characters:
+                return jsonify({'success': False, 'message': 'Character not found'})
+            
+            chat.characters[key].update({
+                'name': name,
+                'role': description or 'Custom Character',
+                'system_prompt': description or f'You are {name}. Engage naturally in conversation.',
+                'image_caption_prompt': image_caption_prompt or 'Describe this image'
+            })
+            message = f'Character "{name}" updated successfully'
+        else:
+            # Create new character
+            character_key = chat.add_character(name, description, image_caption_prompt)
+            message = f'Character "{name}" created successfully'
+        
+        # Reload characters for all sessions
         for session_chat in chat_sessions.values():
             session_chat.load_characters()
         
         return jsonify({
             'success': True, 
-            'message': f'Character "{name}" created successfully',
+            'message': message,
             'character_name': name
         })
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)})
     except Exception as e:
-        return jsonify({'success': False, 'message': f'Error creating character: {str(e)}'})
+        return jsonify({'success': False, 'message': f'Error saving character: {str(e)}'})
 
 @app.route('/api/upload_image', methods=['POST'])
 def upload_image():
@@ -726,6 +744,110 @@ def get_session_info():
 def toggle_dark_mode():
     """Toggle dark mode (client-side only, no server state needed)"""
     return jsonify({'success': True, 'message': 'Dark mode toggled'})
+
+# ================================
+# CHARACTER MANAGEMENT API ROUTES
+# ================================
+
+@app.route('/api/characters', methods=['GET'])
+def api_get_characters():
+    """Get full list of characters with all details"""
+    chat = get_chat_session()
+    chat.load_characters()
+    characters = []
+    for key, char in chat.characters.items():
+        characters.append({
+            'key': key,
+            'name': char.get('name', ''),
+            'role': char.get('role', ''),
+            'system_prompt': char.get('system_prompt', ''),
+            'image_caption_prompt': char.get('image_caption_prompt', ''),
+            'user_profile': char.get('user_profile', '')
+        })
+    return jsonify({'success': True, 'characters': characters})
+
+@app.route('/api/characters/edit', methods=['POST'])
+def api_edit_character():
+    """Edit an existing character"""
+    data = request.get_json()
+    key = data.get('key', '').strip()
+    name = data.get('name', '').strip()
+    role = data.get('role', '').strip()
+    system_prompt = data.get('system_prompt', '').strip()
+    image_caption_prompt = data.get('image_caption_prompt', '').strip()
+    user_profile = data.get('user_profile', '').strip()
+
+    if not key or not name:
+        return jsonify({'success': False, 'message': 'Character key and name are required'})
+
+    chat = get_chat_session()
+    chat.load_characters()
+
+    if key not in chat.characters:
+        return jsonify({'success': False, 'message': f'Character "{key}" not found'})
+
+    # Update character
+    chat.characters[key].update({
+        'name': name,
+        'role': role or 'Custom Character',
+        'system_prompt': system_prompt or f'You are {name}. Engage naturally in conversation.',
+        'image_caption_prompt': image_caption_prompt or 'Describe this image',
+        'user_profile': user_profile
+    })
+
+    try:
+        with open(chat.character_file, 'w') as f:
+            json.dump(chat.characters, f, indent=2)
+        
+        # Refresh characters for all sessions
+        for session_chat in chat_sessions.values():
+            session_chat.load_characters()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Character "{name}" updated successfully'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Failed to update character: {str(e)}'})
+
+@app.route('/api/characters/delete', methods=['POST'])
+def api_delete_character():
+    """Delete a character"""
+    data = request.get_json()
+    key = data.get('key', '').strip()
+
+    if not key:
+        return jsonify({'success': False, 'message': 'Character key is required'})
+
+    # Prevent deletion of default characters
+    default_characters = ['assistant', 'creative_writer', 'code_helper', 'researcher']
+    if key in default_characters:
+        return jsonify({'success': False, 'message': 'Cannot delete default characters'})
+
+    chat = get_chat_session()
+    chat.load_characters()
+
+    if key not in chat.characters:
+        return jsonify({'success': False, 'message': f'Character "{key}" not found'})
+
+    character_name = chat.characters[key].get('name', key)
+    
+    try:
+        del chat.characters[key]
+        
+        with open(chat.character_file, 'w') as f:
+            json.dump(chat.characters, f, indent=2)
+        
+        # Refresh characters for all sessions
+        for session_chat in chat_sessions.values():
+            session_chat.load_characters()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Character "{character_name}" deleted successfully'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Failed to delete character: {str(e)}'})
 
 # ================================
 # MODEL MANAGEMENT API ROUTES
@@ -1022,14 +1144,14 @@ def cleanup_session(error):
     pass
 
 if __name__ == '__main__':
-    print("=== Ollama Chat UI with Multi-User Session Management & Complete Model Management ===")
+    print("=== Ollama Chat UI with Complete Model & Character Management ===")
     print(f"Available Chat Models ({len(chat_models)}): {chat_models}")
     print(f"Available Caption Models ({len(caption_models)}): {caption_models}")
     print(f"Default Chat Model: {selected_chat_model}")
     print(f"Default Image Model: {selected_image_model}")
     print("🚀 Starting Flask server with session support on http://localhost:5000")
     print("👥 Multiple users can now use the app simultaneously without interference")
-    print("📥 Users can download new models directly from the interface")
-    print("🗂️ Complete model management: list, download, delete with persistent progress")
+    print("📥 Complete model management: list, download, delete with persistent progress")
+    print("🎭 Complete character management: create, edit, delete with full customization")
     print("🔧 Use the TEST OLLAMA button to debug download issues")
     app.run(debug=True, host='0.0.0.0', port=5000)
