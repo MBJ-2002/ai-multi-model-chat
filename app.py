@@ -65,6 +65,48 @@ def get_available_models():
         print(f"Error getting models from Ollama: {e}")
         return ["wizard-vicuna-uncensored:7b"], ["aha2025/llama-joycaption-beta-one-hf-llava:Q4_K_M"], []
 
+def get_local_models():
+    """Get list of locally installed models using ollama list command"""
+    try:
+        result = subprocess.run(['ollama', 'list'], capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            return []
+        
+        lines = result.stdout.strip().split('\n')
+        models = []
+        
+        # Skip header line
+        for line in lines[1:]:
+            if line.strip():
+                parts = line.split()
+                if len(parts) >= 4:
+                    model_info = {
+                        'name': parts[0],
+                        'id': parts[1] if len(parts) > 1 else 'unknown',
+                        'size': parts[2] if len(parts) > 2 else 'unknown',
+                        'modified': ' '.join(parts[3:]) if len(parts) > 3 else 'unknown'
+                    }
+                    models.append(model_info)
+        
+        return models
+    except Exception as e:
+        print(f"Error getting local models: {e}")
+        return []
+
+def delete_ollama_model(model_name):
+    """Delete a model using ollama rm command"""
+    try:
+        result = subprocess.run(['ollama', 'rm', model_name], capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            return True, f"Successfully deleted {model_name}"
+        else:
+            error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+            return False, f"Failed to delete {model_name}: {error_msg}"
+    except subprocess.TimeoutExpired:
+        return False, f"Timeout while deleting {model_name}"
+    except Exception as e:
+        return False, f"Error deleting {model_name}: {str(e)}"
+
 # Get available models on startup
 chat_models, caption_models, all_models = get_available_models()
 selected_chat_model = chat_models[0] if chat_models else "wizard-vicuna-uncensored:7b"
@@ -460,7 +502,7 @@ def serve_react_app():
         return send_from_directory(app.static_folder, 'index.html')
     except FileNotFoundError:
         return """
-        <h1>React Build Not Found</h1>
+        <h1>React Build Not Found</h1>  
         <p>Please build the React app first:</p>
         <ol>
             <li>cd frontend</li>
@@ -686,8 +728,100 @@ def toggle_dark_mode():
     return jsonify({'success': True, 'message': 'Dark mode toggled'})
 
 # ================================
-# MODEL DOWNLOAD API ROUTES (FIXED)
+# MODEL MANAGEMENT API ROUTES
 # ================================
+
+@app.route('/api/models/list', methods=['GET'])
+def api_list_models():
+    """Get list of locally installed models"""
+    try:
+        models = get_local_models()
+        return jsonify({
+            'success': True,
+            'models': models,
+            'count': len(models)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error listing models: {str(e)}',
+            'models': []
+        })
+
+@app.route('/api/models/delete', methods=['POST'])
+def api_delete_model():
+    """Delete a locally installed model"""
+    data = request.get_json()
+    model_name = data.get('model_name', '').strip()
+    
+    if not model_name:
+        return jsonify({'success': False, 'message': 'Model name is required'})
+    
+    try:
+        success, message = delete_ollama_model(model_name)
+        
+        if success:
+            # Refresh global model lists after deletion
+            global chat_models, caption_models, all_models
+            chat_models, caption_models, all_models = get_available_models()
+        
+        return jsonify({
+            'success': success,
+            'message': message
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error deleting model: {str(e)}'
+        })
+
+@app.route('/api/models/stats', methods=['GET'])
+def api_model_stats():
+    """Get model statistics and system info"""
+    try:
+        models = get_local_models()
+        total_models = len(models)
+        
+        # Calculate total size (rough estimate)
+        total_size = 0
+        for model in models:
+            try:
+                size_str = model.get('size', '0B')
+                if 'GB' in size_str:
+                    total_size += float(size_str.replace('GB', '').strip())
+                elif 'MB' in size_str:
+                    total_size += float(size_str.replace('MB', '').strip()) / 1024
+            except:
+                pass
+        
+        # Check if ollama is running
+        try:
+            result = subprocess.run(['ollama', 'ps'], capture_output=True, text=True, timeout=5)
+            running_models = []
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                for line in lines[1:]:  # Skip header
+                    if line.strip():
+                        parts = line.split()
+                        if parts:
+                            running_models.append(parts[0])
+        except:
+            running_models = []
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_models': total_models,
+                'total_size_gb': round(total_size, 2),
+                'running_models': running_models,
+                'running_count': len(running_models)
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error getting stats: {str(e)}'
+        })
 
 @app.route('/api/test_ollama', methods=['GET'])
 def test_ollama():
@@ -888,7 +1022,7 @@ def cleanup_session(error):
     pass
 
 if __name__ == '__main__':
-    print("=== Ollama Chat UI with Multi-User Session Management & Fixed Model Downloads ===")
+    print("=== Ollama Chat UI with Multi-User Session Management & Complete Model Management ===")
     print(f"Available Chat Models ({len(chat_models)}): {chat_models}")
     print(f"Available Caption Models ({len(caption_models)}): {caption_models}")
     print(f"Default Chat Model: {selected_chat_model}")
@@ -896,5 +1030,6 @@ if __name__ == '__main__':
     print("🚀 Starting Flask server with session support on http://localhost:5000")
     print("👥 Multiple users can now use the app simultaneously without interference")
     print("📥 Users can download new models directly from the interface")
+    print("🗂️ Complete model management: list, download, delete with persistent progress")
     print("🔧 Use the TEST OLLAMA button to debug download issues")
     app.run(debug=True, host='0.0.0.0', port=5000)
