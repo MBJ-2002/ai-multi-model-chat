@@ -42,7 +42,7 @@ jobs:
           cd out-repo
           git add .
           git commit -m "Add Linux binaries"
-          git push origin main
+          git push origin master
 
   build_windows:
     runs-on: windows-latest
@@ -79,4 +79,4 @@ jobs:
           cd out-repo
           git add .
           git commit -m "Add Windows binaries"
-          git push origin main
+          git push origin master
