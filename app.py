@@ -1144,6 +1144,8 @@ def cleanup_session(error):
     pass
 
 if __name__ == '__main__':
+    from multiprocessing import freeze_support
+    freeze_support()
     print("=== Ollama Chat UI with Complete Model & Character Management ===")
     print(f"Available Chat Models ({len(chat_models)}): {chat_models}")
     print(f"Available Caption Models ({len(caption_models)}): {caption_models}")
