@@ -32,12 +32,10 @@ jobs:
           python -m PyInstaller --onefile app.py --distpath dist/linux
 
       - name: Push Linux binary to public repo
-        env:
-          PAT: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git clone https://x-access-token:$PAT@github.com/MBJ-2002/ai-chat-app-binaries.git out-repo
+          git clone "https://x-access-token:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/MBJ-2002/ai-chat-app-binaries.git" out-repo
           cp -r dist/linux/* out-repo/
           cd out-repo
           git add .
@@ -72,12 +70,11 @@ jobs:
 
       - name: Push Windows binary to public repo
         shell: pwsh
-        env:
-          PAT: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git clone https://x-access-token:$PAT@github.com/MBJ-2002/ai-chat-app-binaries.git out-repo
+
+          git clone "https://x-access-token:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/MBJ-2002/ai-chat-app-binaries.git" out-repo
           cp -r dist/windows/* out-repo/
           cd out-repo
           git add .
