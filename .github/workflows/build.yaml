@@ -24,11 +24,12 @@ jobs:
           source venv/bin/activate
           pip install --upgrade pip
           pip install -r requirements_linux.txt
+          pip install pyinstaller
 
       - name: Build Linux binary
         run: |
           source venv/bin/activate
-          pyinstaller --onefile app.py --distpath dist/linux
+          python -m PyInstaller --onefile app.py --distpath dist/linux
 
       - name: Push Linux binary to public repo
         env:
@@ -57,14 +58,15 @@ jobs:
       - name: Install Windows requirements
         run: |
           python -m venv venv
-          venv\Scripts\activate
+          call venv\Scripts\activate.bat
           python -m pip install --upgrade pip
           pip install -r requirements_windows.txt
+          pip install pyinstaller
 
       - name: Build Windows binary
         run: |
-          venv\Scripts\activate
-          pyinstaller --onefile app.py --distpath dist/windows
+          call venv\Scripts\activate.bat
+          python -m PyInstaller --onefile app.py --distpath dist/windows
 
       - name: Push Windows binary to public repo
         env:
