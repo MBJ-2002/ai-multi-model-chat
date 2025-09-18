@@ -22,7 +22,7 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements_linux.txt
           pip install pyinstaller
 
@@ -42,7 +42,7 @@ jobs:
           cd out-repo
           git add .
           git commit -m "Add Linux binaries"
-          git push origin master
+          git push origin HEAD:master
 
   build_windows:
     runs-on: windows-latest
@@ -56,6 +56,7 @@ jobs:
           python-version: 3.11
 
       - name: Install Windows requirements
+        shell: pwsh
         run: |
           python -m venv venv
           & venv\Scripts\Activate.ps1
@@ -64,11 +65,13 @@ jobs:
           pip install pyinstaller
 
       - name: Build Windows binary
+        shell: pwsh
         run: |
           & venv\Scripts\Activate.ps1
           python -m PyInstaller --onefile app.py --distpath dist/windows
 
       - name: Push Windows binary to public repo
+        shell: pwsh
         env:
           PAT: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
@@ -79,4 +82,4 @@ jobs:
           cd out-repo
           git add .
           git commit -m "Add Windows binaries"
-          git push origin master
+          git push origin HEAD:master
