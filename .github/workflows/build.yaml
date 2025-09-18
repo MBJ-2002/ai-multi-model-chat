@@ -3,7 +3,7 @@ name: Build Cross-Platform Binaries (Linux + Windows)
 on:
   push:
     tags:
-      - 'v*'   # triggers workflow when you push a version tag like v1.0
+      - 'v*'
 
 jobs:
   build-windows:
@@ -21,9 +21,9 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      - name: Install PyTorch (Windows CPU build)
+      - name: Install PyTorch (CPU build)
         run: |
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install torch==2.7.1+cpu torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install Windows dependencies
         run: |
