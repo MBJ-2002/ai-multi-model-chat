@@ -75,3 +75,4 @@ jobs:
           branch: main
           folder: dist/linux
           github_token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+ 
