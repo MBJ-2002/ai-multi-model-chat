@@ -39,7 +39,7 @@ jobs:
         uses: ad-m/github-push-action@v0.6.0
         with:
           repository: MBJ-2002/ai-chat-app-binaries
-          branch: main
+          branch: master
           folder: dist/windows
           github_token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
@@ -72,7 +72,7 @@ jobs:
         uses: ad-m/github-push-action@v0.6.0
         with:
           repository: MBJ-2002/ai-chat-app-binaries
-          branch: main
+          branch: master
           folder: dist/linux
           github_token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
  
