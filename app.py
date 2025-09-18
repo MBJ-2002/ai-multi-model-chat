@@ -16,7 +16,17 @@ import time
 import requests
 import sys
 
-app = Flask(__name__, static_folder='static/build', static_url_path='')
+
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(__name__,
+            template_folder=os.path.join(BASE_DIR, "templates"),
+            static_folder=os.path.join(BASE_DIR, "static"))
+
+#app = Flask(__name__, static_folder='static/build', static_url_path='')
 CORS(app, supports_credentials=True)  # Enable credentials for sessions
 
 # Configure session management
