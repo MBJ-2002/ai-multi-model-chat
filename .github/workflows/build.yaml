@@ -37,6 +37,16 @@ jobs:
 
       - name: Push Windows binary to public repo
         uses: ad-m/github-push-action@v0.6.0
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      
+          git clone https://x-access-token:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/MBJ-2002/ai-chat-app-binaries.git out-repo
+          cp -r dist/windows/* out-repo/
+          cd out-repo
+          git add .
+          git commit -m "Add latest Windows binaries"
+          git push origin main
         with:
           repository: MBJ-2002/ai-chat-app-binaries
           branch: master
@@ -68,11 +78,26 @@ jobs:
           mkdir -p dist/linux
           mv dist/app dist/linux/app
 
-      - name: Push Linux binary to public repo
+      - name: Push Linux binary to public repo       
         uses: ad-m/github-push-action@v0.6.0
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Clone the public repo
+          git clone https://x-access-token:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/MBJ-2002/ai-chat-app-binaries.git out-repo
+
+          # Copy binaries
+          cp -r dist/linux/* out-repo/
+
+          cd out-repo
+          git add .
+          git commit -m "Add latest Linux binaries"
+          git push origin main
         with:
           repository: MBJ-2002/ai-chat-app-binaries
           branch: master
           folder: dist/linux
           github_token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+
  
