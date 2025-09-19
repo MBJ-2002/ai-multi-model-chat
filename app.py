@@ -1240,10 +1240,45 @@ def debug_static():
 
 if __name__ == '__main__':
     from multiprocessing import freeze_support
+    import webbrowser
     freeze_support()
-    s = socket.socket()
-    s.bind(('', 0))
-    port = s.getsockname()[1]
+    def find_free_port():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('', 0))
+            s.listen(1)
+            port = s.getsockname()[1]
+        return port
+    
+    # Function to check if port is available
+    def is_port_available(port):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(('', port))
+                return True
+            except OSError:
+                return False
+    
+    # Function to open browser after delay
+    def open_browser(port):
+        time.sleep(2)  # Wait for Flask to start
+        try:
+            url = f'http://127.0.0.1:{port}'
+            print(f"🌐 Opening browser at {url}")
+            webbrowser.open_new(url)
+        except Exception as e:
+            print(f"⚠️  Could not open browser: {e}")
+    
+    # Find an available port
+    port = find_free_port()
+    
+    # Fallback port selection if the detected port becomes unavailable
+    fallback_ports = [5000, 5001, 5002, 5003, 8000, 8080, 3000]
+    if not is_port_available(port):
+        print(f"⚠️  Port {port} became unavailable, trying fallback ports...")
+        for fallback_port in fallback_ports:
+            if is_port_available(fallback_port):
+                port = fallback_port
+                break
     print("=== Ollama Chat UI with Complete Model & Character Management ===")
     print(f"Available Chat Models ({len(chat_models)}): {chat_models}")
     print(f"Available Caption Models ({len(caption_models)}): {caption_models}")
@@ -1254,4 +1289,29 @@ if __name__ == '__main__':
     print("📥 Complete model management: list, download, delete with persistent progress")
     print("🎭 Complete character management: create, edit, delete with full customization")
     print("🔧 Use the TEST OLLAMA button to debug download issues")
-    app.run(debug=True, host='0.0.0.0', port=port)
+    
+    browser_thread = threading.Timer(2.0, open_browser, args=(port,))
+    browser_thread.daemon = True
+    browser_thread.start()    
+    try:
+        # Start Flask app with dynamic port
+        app.run(
+            debug=False,  # Disable debug mode to prevent restart issues
+            host='127.0.0.1',
+            port=port,
+            use_reloader=False,  # Prevent auto-reload which causes port conflicts
+            threaded=True
+        )
+    except KeyboardInterrupt:
+        print("\n🛑 Shutting down Ollama Chat UI...")
+        print("👋 Goodbye!")
+    except OSError as e:
+        if "Address already in use" in str(e):
+            print(f"\n❌ Port {port} is already in use!")
+            print("   The app will try another port automatically on next run.")
+        else:
+            print(f"\n❌ Error starting server: {e}")
+    except Exception as e:
+        print(f"\n❌ Unexpected error: {e}")
+
+    #app.run(debug=True, host='0.0.0.0', port=port)
