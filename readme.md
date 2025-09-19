@@ -1,10 +1,12 @@
 # Multi Model AI chat App
+- An AI chat app, where you can create your characters and chat with them. Download models that you wish with in build model manager. You can even share images with your AI character and see reactions. I created this app in WSL and you will need Ollama cli to run this.
 
 ## Features
 - Single Server Architecture - React and Flask served from one port
 - Real-time Chat - Instant message display with typing indicators
 - Multiple AI Models - Automatic discovery of chat and vision models
 - Character Management - Create custom AI personalities
+- Model Management - Download models as per your choice
 - Image Processing - Upload and analyze images with vision models
 - Rich Text Rendering - Full markdown support with syntax highlighting
 - Dark/Light Mode - Toggle between themes with persistence
@@ -35,3 +37,7 @@
 - Step 3 Download model for image captioning I recommend joycaption
 - Step 4 `pip install -r requirements.txt`
 - Step 5 `python app.py`
+
+## Future Plans
+- Maybe containerise it, if you know how to containerise it please do contribute
+- Add chat saving system into local storage
