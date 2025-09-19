@@ -710,7 +710,9 @@ def create_character():
     
     key = data.get('key', '').strip()  # If provided, we're editing
     name = data.get('name', '').strip()
-    description = data.get('description', '').strip()
+    role = data.get('role','').strip()
+    system_prompt = data.get('system_prompt', '').strip()
+    description = system_prompt
     image_caption_prompt = data.get('image_caption_prompt', '').strip()
     
     if not name:
@@ -724,25 +726,32 @@ def create_character():
             
             chat.characters[key].update({
                 'name': name,
-                'role': description or 'Custom Character',
-                'system_prompt': description or f'You are {name}. Engage naturally in conversation.',
+                'role': role or 'Custom Character',
+                'system_prompt': system_prompt or f'You are {name}. Engage naturally in conversation.',
                 'image_caption_prompt': image_caption_prompt or 'Describe this image'
             })
             message = f'Character "{name}" updated successfully'
         else:
             # Create new character
-            character_key = chat.add_character(name, description, image_caption_prompt)
+            character_key = chat.add_character(
+                name,                              
+                system_prompt or f"You are {name}. Engage naturally in conversation.",
+                image_caption_prompt
+                )
             message = f'Character "{name}" created successfully'
         
         # Reload characters for all sessions
         for session_chat in chat_sessions.values():
             session_chat.load_characters()
         
+        all_characters = [char for char in chat.characters.values()]
+        print(all_characters)
         return jsonify({
             'success': True, 
             'message': message,
-            'character_name': name
+            'characters': [char for char in chat.characters.values()]  # <-- this line added
         })
+    
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)})
     except Exception as e:
