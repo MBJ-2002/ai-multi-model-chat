@@ -29,11 +29,14 @@ function CharacterManagerModal({ onClose }) {
   const fetchCharacters = async () => {
     try {
       const response = await fetch(`${API_BASE}/characters`, {
-        credentials: 'include'
+        credentials: 'include',
+        headers: { 'Cache-Control': 'no-cache' }
       });
       const data = await response.json();
       if (data.success) {
-        setCharacters(data.characters);
+        console.log(data)
+        setCharacters([...data.characters]);
+        
       }
     } catch (error) {
       console.error('Failed to fetch characters:', error);
@@ -101,9 +104,10 @@ function CharacterManagerModal({ onClose }) {
       const data = await response.json();
       if (data.success) {
         fetchCharacters();
-        resetForm();
+        resetForm();        
         setActiveTab('manage');
         alert(data.message);
+        window.location.reload();
       } else {
         alert(data.message);
       }
