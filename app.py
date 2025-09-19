@@ -15,7 +15,7 @@ import queue
 import time
 import requests
 import sys
-
+import socket
 
 if getattr(sys, 'frozen', False):
     BASE_DIR = sys._MEIPASS
@@ -1156,6 +1156,9 @@ def cleanup_session(error):
 if __name__ == '__main__':
     from multiprocessing import freeze_support
     freeze_support()
+    s = socket.socket()
+    s.bind(('', 0))
+    port = s.getsockname()[1]
     print("=== Ollama Chat UI with Complete Model & Character Management ===")
     print(f"Available Chat Models ({len(chat_models)}): {chat_models}")
     print(f"Available Caption Models ({len(caption_models)}): {caption_models}")
@@ -1166,4 +1169,4 @@ if __name__ == '__main__':
     print("📥 Complete model management: list, download, delete with persistent progress")
     print("🎭 Complete character management: create, edit, delete with full customization")
     print("🔧 Use the TEST OLLAMA button to debug download issues")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=port)
