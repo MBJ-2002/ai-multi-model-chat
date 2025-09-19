@@ -16,15 +16,57 @@ import time
 import requests
 import sys
 import socket
+import shutil
+import tempfile
+from pathlib import Path
 
 if getattr(sys, 'frozen', False):
     BASE_DIR = sys._MEIPASS
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-app = Flask(__name__,
-            template_folder=os.path.join(BASE_DIR, "templates"),
-            static_folder=os.path.join(BASE_DIR, "static"))
+def resource_path(relative_path):   
+    try:       
+        base_path = sys._MEIPASS
+        print(f"PyInstaller mode: Looking for {relative_path} in {base_path}")
+    except AttributeError:
+        base_path = os.path.abspath(".")
+        print(f"Development mode: Looking for {relative_path} in {base_path}")
+    
+    full_path = os.path.join(base_path, relative_path)
+    print(f"Resource path for {relative_path}: {full_path}")
+    print(f"Path exists: {os.path.exists(full_path)}")
+    
+    return full_path
+
+def setup_static_files():    
+    if getattr(sys, 'frozen', False):       
+        static_source = resource_path('static')
+        exe_dir = os.path.dirname(sys.executable)
+        static_dest = os.path.join(exe_dir, 'static')
+        
+        print(f"Copying static files from {static_source} to {static_dest}")        
+        if os.path.exists(static_source) and not os.path.exists(static_dest):
+            shutil.copytree(static_source, static_dest)
+            print(f"Static files copied successfully")
+        elif os.path.exists(static_dest):
+            print(f"Static files already exist at {static_dest}")
+        else:
+            print(f"ERROR: Static source not found at {static_source}")
+            
+        return static_dest
+    else:        
+        return resource_path('static')
+
+static_folder_path = setup_static_files()
+
+app = Flask(__name__, 
+            static_folder=static_folder_path,
+            static_url_path='')
+
+#app = Flask(__name__,
+#           template_folder=os.path.join(BASE_DIR, "templates"),
+#          static_folder=os.path.join(BASE_DIR, "static"))
 
 #app = Flask(__name__, static_folder='static/build', static_url_path='')
 CORS(app, supports_credentials=True)  # Enable credentials for sessions
@@ -507,28 +549,46 @@ def cleanup_old_sessions():
 
 @app.route('/')
 def serve_react_app():
-    """Serve React app's index.html"""
     try:
-        return send_from_directory(app.static_folder, 'index.html')
-    except FileNotFoundError:
-        return """
-        <h1>React Build Not Found</h1>  
-        <p>Please build the React app first:</p>
-        <ol>
-            <li>cd frontend</li>
-            <li>npm run build-and-copy</li>
-        </ol>
-        <p>Then restart the Flask server.</p>
-        """, 404
+        static_path = app.static_folder
+        index_path = os.path.join(static_path, 'index.html')
+        
+        print(f"Looking for index.html at: {index_path}")
+        print(f"File exists: {os.path.exists(index_path)}")
+        
+        if os.path.exists(index_path):
+            return send_from_directory(static_path, 'index.html')
+        else:
+            if os.path.exists(static_path):
+                files = os.listdir(static_path)
+                return f"""
+                <h1>Static Files Debug</h1>
+                <p>Static folder: {static_path}</p>
+                <p>Files found: {files}</p>
+                <p>Looking for: index.html</p>
+                <p><a href="/debug/static">Full static files listing</a></p>
+                """
+            else:
+                return f"Static folder not found: {static_path}"
+    except Exception as e:
+        return f"Error serving React app: {str(e)}"
 
 @app.route('/<path:path>')
-def serve_react_static(path):
-    """Serve React static files or fallback to index.html for client-side routing"""
+def serve_react_static(path):   
     try:
-        return send_from_directory(app.static_folder, path)
-    except FileNotFoundError:
-        # For client-side routing, return index.html
-        return send_from_directory(app.static_folder, 'index.html')
+        static_path = app.static_folder
+        file_path = os.path.join(static_path, path)
+        
+        if os.path.exists(file_path):
+            return send_from_directory(static_path, path)
+        else:            
+            index_path = os.path.join(static_path, 'index.html')
+            if os.path.exists(index_path):
+                return send_from_directory(static_path, 'index.html')
+            else:
+                return f"File not found: {path}", 404
+    except Exception as e:
+        return f"Error serving static file: {str(e)}", 500
 
 # ================================
 # API ROUTES
@@ -1152,6 +1212,31 @@ def get_popular_models():
 def cleanup_session(error):
     """Optional cleanup when app context tears down"""
     pass
+
+@app.route('/debug/static')
+def debug_static():
+    """Debug route to check static files"""
+    static_path = app.static_folder
+    
+    if not os.path.exists(static_path):
+        return f"Static folder does not exist: {static_path}"
+    
+    files = []
+    for root, dirs, file_list in os.walk(static_path):
+        for file in file_list:
+            rel_path = os.path.relpath(os.path.join(root, file), static_path)
+            files.append(rel_path)
+    
+    return f"""
+    <h2>Static Folder Debug</h2>
+    <p><strong>Static folder:</strong> {static_path}</p>
+    <p><strong>Exists:</strong> {os.path.exists(static_path)}</p>
+    <p><strong>Files found:</strong></p>
+    <ul>
+        {''.join(f'<li>{f}</li>' for f in files)}
+    </ul>
+    """
+
 
 if __name__ == '__main__':
     from multiprocessing import freeze_support
