@@ -1,21 +1,33 @@
 const fs = require('fs-extra');
 const path = require('path');
 
-const srcDir = path.join(__dirname, 'build');
-const destDir = path.join(__dirname, '..', 'static', 'build');
+async function copyBuildToStatic() {
+  try {
+    console.log('Starting build copy process...');
+    const buildDir = path.join(__dirname, 'build');
+    const staticDir = path.join(__dirname, '..','static');
 
-try {
-  // Ensure destination directory exists
-  fs.ensureDirSync(destDir);
+    if (!fs.existsSync(buildDir)) {
+      console.error('Build directory not found. Please run "npm run build" first.');
+      process.exit(1);
+    }
+    if (fs.existsSync(staticDir)) {
+      console.log('Clearing existing static directory...');
+      await fs.emptyDir(staticDir);
+    } else {
+      console.log('Creating static directory...');
+      await fs.ensureDir(staticDir);
+    }    
+    await fs.copy(buildDir, staticDir);    
   
-  // Empty destination directory
-  fs.emptyDirSync(destDir);
-  
-  // Copy build files
-  fs.copySync(srcDir, destDir);
-  
-  console.log('✅ React build copied to Flask static folder');
-} catch (error) {
-  console.error('❌ Failed to copy React build:', error.message);
-  process.exit(1);
+    const files = await fs.readdir(staticDir);
+    console.log(`Files in static/: ${files.slice(0, 5).join(', ')}${files.length > 5 ? '...' : ''}`);
+
+  } catch (error) {
+    console.error('Error copying build files:', error.message);
+    process.exit(1);
+  }
 }
+
+
+copyBuildToStatic();

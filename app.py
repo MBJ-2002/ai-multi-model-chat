@@ -161,8 +161,8 @@ def delete_ollama_model(model_name):
 
 # Get available models on startup
 chat_models, caption_models, all_models = get_available_models()
-selected_chat_model = chat_models[0] if chat_models else "wizard-vicuna-uncensored:7b"
-selected_image_model = caption_models[0] if caption_models else "aha2025/llama-joycaption-beta-one-hf-llava:Q4_K_M"
+selected_chat_model = chat_models[0] if chat_models else "None installed"
+selected_image_model = caption_models[0] if caption_models else "None installed"
 
 default_instruction = "Describe this image in detail, including what you see, the setting, objects, people, and any notable features."
 
@@ -183,7 +183,7 @@ def generate_caption(image_path, instruction=default_instruction, model=None):
     return response["message"]["content"]
 
 def execute_ollama_pull(model_name, session_id, progress_queue):
-    """Execute ollama pull command with improved progress tracking"""
+    """Execute ollama pull command with improved progress tracking and encoding fix"""
     try:
         print(f"Starting download of {model_name} for session {session_id[:8]}...")
         
@@ -198,7 +198,7 @@ def execute_ollama_pull(model_name, session_id, progress_queue):
         
         # Check if ollama is available
         try:
-            subprocess.run(['ollama', '--version'], check=True, capture_output=True, text=True)
+            subprocess.run(['ollama', '--version'], check=True, capture_output=True, text=True, encoding='utf-8')
         except (subprocess.CalledProcessError, FileNotFoundError):
             download_progress[session_id].update({
                 'status': 'error',
@@ -206,18 +206,39 @@ def execute_ollama_pull(model_name, session_id, progress_queue):
                 'message': 'Ollama is not installed or not available in PATH'
             })
             return
-
-        # Execute ollama pull command with real-time output
+        
+        # ✅ FIX: Execute ollama pull command with proper encoding
         cmd = ['ollama', 'pull', model_name]
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Redirect stderr to stdout
-            text=True,
-            bufsize=1,  # Line buffered
-            universal_newlines=True,
-            env=os.environ.copy()  # Use current environment
-        )
+        
+        # Try different encodings for Windows compatibility
+        encoding_options = ['utf-8', 'cp437', 'cp1252', 'latin1']
+        process = None
+        
+        for encoding in encoding_options:
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding=encoding,  # ✅ Specify encoding explicitly
+                    errors='replace',   # ✅ Replace problematic characters instead of failing
+                    bufsize=1,
+                    universal_newlines=True,
+                    env=os.environ.copy()
+                )
+                break  # If successful, break out of loop
+            except UnicodeDecodeError:
+                print(f"Encoding {encoding} failed, trying next...")
+                continue
+        
+        if not process:
+            download_progress[session_id].update({
+                'status': 'error',
+                'progress': 0,
+                'message': 'Failed to start ollama process with any supported encoding'
+            })
+            return
         
         download_progress[session_id].update({
             'progress': 5,
@@ -226,64 +247,72 @@ def execute_ollama_pull(model_name, session_id, progress_queue):
         
         # Read output line by line in real-time
         while True:
-            output = process.stdout.readline()
-            if output == '' and process.poll() is not None:
+            try:
+                output = process.stdout.readline()
+                if output == '' and process.poll() is not None:
+                    break
+                
+                if output:
+                    line = output.strip()
+                    print(f"Ollama output: {line}")  # Debug output
+                    
+                    # Parse progress from different output patterns
+                    progress_updated = False
+                    
+                    # Pattern 1: "pulling abc123... 45.2MB/100.5MB"
+                    size_match = re.search(r'pulling\s+\w+\.\.\.\s+([\d.]+)\w+/([\d.]+)\w+', line)
+                    if size_match:
+                        current = float(size_match.group(1))
+                        total = float(size_match.group(2))
+                        if total > 0:
+                            percent = int((current / total) * 100)
+                            download_progress[session_id].update({
+                                'progress': min(percent, 95),
+                                'message': f'Downloading {model_name}... {current:.1f}/{total:.1f}MB'
+                            })
+                            progress_updated = True
+
+                    # Pattern 2: Direct percentage "45%"
+                    if not progress_updated:
+                        percent_match = re.search(r'(\d+)%', line)
+                        if percent_match:
+                            percent = int(percent_match.group(1))
+                            download_progress[session_id].update({
+                                'progress': min(percent, 95),
+                                'message': f'Downloading {model_name}... {percent}%'
+                            })
+                            progress_updated = True
+
+                    # Pattern 3: Status messages
+                    if not progress_updated:
+                        if 'pulling manifest' in line.lower():
+                            download_progress[session_id].update({
+                                'progress': 10,
+                                'message': f'Fetching {model_name} manifest...'
+                            })
+                        elif 'pulling' in line.lower() and 'config' in line.lower():
+                            download_progress[session_id].update({
+                                'progress': 15,
+                                'message': f'Downloading {model_name} configuration...'
+                            })
+                        elif 'verifying' in line.lower():
+                            download_progress[session_id].update({
+                                'progress': 90,
+                                'message': f'Verifying {model_name}...'
+                            })
+                        elif 'success' in line.lower() or 'complete' in line.lower():
+                            download_progress[session_id].update({
+                                'status': 'completed',
+                                'progress': 100,
+                                'message': f'Successfully downloaded {model_name}!'
+                            })
+                            
+            except UnicodeDecodeError as e:
+                print(f"Unicode decode error (ignoring): {e}")
+                continue 
+            except Exception as e:
+                print(f"Error reading process output: {e}")
                 break
-            
-            if output:
-                line = output.strip()
-                print(f"Ollama output: {line}")  # Debug output
-                
-                # Parse progress from different output patterns
-                progress_updated = False
-                
-                # Pattern 1: "pulling abc123... 45.2MB/100.5MB"
-                size_match = re.search(r'pulling\s+\w+\.\.\.\s+([\d.]+)\w+/([\d.]+)\w+', line)
-                if size_match:
-                    current = float(size_match.group(1))
-                    total = float(size_match.group(2))
-                    if total > 0:
-                        percent = int((current / total) * 100)
-                        download_progress[session_id].update({
-                            'progress': min(percent, 95),
-                            'message': f'Downloading {model_name}... {current:.1f}/{total:.1f}MB'
-                        })
-                        progress_updated = True
-
-                # Pattern 2: Direct percentage "45%"
-                if not progress_updated:
-                    percent_match = re.search(r'(\d+)%', line)
-                    if percent_match:
-                        percent = int(percent_match.group(1))
-                        download_progress[session_id].update({
-                            'progress': min(percent, 95),
-                            'message': f'Downloading {model_name}... {percent}%'
-                        })
-                        progress_updated = True
-
-                # Pattern 3: Status messages
-                if not progress_updated:
-                    if 'pulling manifest' in line.lower():
-                        download_progress[session_id].update({
-                            'progress': 10,
-                            'message': f'Fetching {model_name} manifest...'
-                        })
-                    elif 'pulling' in line.lower() and 'config' in line.lower():
-                        download_progress[session_id].update({
-                            'progress': 15,
-                            'message': f'Downloading {model_name} configuration...'
-                        })
-                    elif 'verifying' in line.lower():
-                        download_progress[session_id].update({
-                            'progress': 90,
-                            'message': f'Verifying {model_name}...'
-                        })
-                    elif 'success' in line.lower() or 'complete' in line.lower():
-                        download_progress[session_id].update({
-                            'status': 'completed',
-                            'progress': 100,
-                            'message': f'Successfully downloaded {model_name}!'
-                        })
 
         # Check final status
         return_code = process.poll()
@@ -293,29 +322,23 @@ def execute_ollama_pull(model_name, session_id, progress_queue):
                 'progress': 100,
                 'message': f'Successfully downloaded {model_name}!'
             })
-            print(f"✅ Successfully downloaded {model_name}")
+            print(f"Successfully downloaded {model_name}")
             
             # Refresh global model lists
             global chat_models, caption_models, all_models
             try:
                 chat_models, caption_models, all_models = get_available_models()
-                print(f"📋 Updated model lists: {len(all_models)} total models")
+                print(f"Updated model lists: {len(all_models)} total models")
             except:
                 pass
                 
         else:
-            # Get any error output
-            try:
-                error_output = process.stdout.read() if process.stdout else "Unknown error"
-            except:
-                error_output = "Failed to read error output"
-            
             download_progress[session_id].update({
                 'status': 'error',
                 'progress': 0,
-                'message': f'Failed to download {model_name}: {error_output[:200]}'
+                'message': f'Failed to download {model_name}: Process returned code {return_code}'
             })
-            print(f"❌ Failed to download {model_name}: {error_output}")
+            print(f"Failed to download {model_name}: Return code {return_code}")
             
     except Exception as e:
         error_msg = str(e)
@@ -710,7 +733,9 @@ def create_character():
     
     key = data.get('key', '').strip()  # If provided, we're editing
     name = data.get('name', '').strip()
-    description = data.get('description', '').strip()
+    role = data.get('role','').strip()
+    system_prompt = data.get('system_prompt', '').strip()
+    description = system_prompt
     image_caption_prompt = data.get('image_caption_prompt', '').strip()
     
     if not name:
@@ -724,25 +749,32 @@ def create_character():
             
             chat.characters[key].update({
                 'name': name,
-                'role': description or 'Custom Character',
-                'system_prompt': description or f'You are {name}. Engage naturally in conversation.',
+                'role': role or 'Custom Character',
+                'system_prompt': system_prompt or f'You are {name}. Engage naturally in conversation.',
                 'image_caption_prompt': image_caption_prompt or 'Describe this image'
             })
             message = f'Character "{name}" updated successfully'
         else:
             # Create new character
-            character_key = chat.add_character(name, description, image_caption_prompt)
+            character_key = chat.add_character(
+                name,                              
+                system_prompt or f"You are {name}. Engage naturally in conversation.",
+                image_caption_prompt
+                )
             message = f'Character "{name}" created successfully'
         
         # Reload characters for all sessions
         for session_chat in chat_sessions.values():
             session_chat.load_characters()
         
+        all_characters = [char for char in chat.characters.values()]
+        print(all_characters)
         return jsonify({
             'success': True, 
             'message': message,
-            'character_name': name
+            'characters': [char for char in chat.characters.values()]  # <-- this line added
         })
+    
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)})
     except Exception as e:
@@ -1070,8 +1102,8 @@ def download_model():
         return jsonify({'success': False, 'message': 'A download is already in progress'})
     
     # Enhanced model name validation
-    if not re.match(r'^[a-zA-Z0-9._:-]+$', model_name):
-        return jsonify({'success': False, 'message': 'Invalid model name format. Use only letters, numbers, dots, hyphens, and colons.'})
+    #if not re.match(r'^[a-zA-Z0-9._:-]+$', model_name):
+        #return jsonify({'success': False, 'message': 'Invalid model name format. Use only letters, numbers, dots, hyphens, and colons.'})
     
     # Test ollama availability
     try:
@@ -1086,7 +1118,7 @@ def download_model():
         progress_queue = queue.Queue()
         
         # Try CLI method first, fallback to API
-        download_method = data.get('method', 'cli')  # Default to CLI
+        download_method = data.get('method', 'cli')
         if download_method == 'api':
             download_thread = threading.Thread(
                 target=download_model_via_api,
@@ -1105,7 +1137,7 @@ def download_model():
         # Track the thread
         download_threads[session_id] = download_thread
         
-        print(f"🚀 Started download thread for {model_name} using {download_method} method")
+        print(f"Started download thread for {model_name} using {download_method} method")
         
         return jsonify({
             'success': True,
@@ -1124,8 +1156,7 @@ def get_download_progress():
     
     if session_id in download_progress:
         progress_data = download_progress[session_id].copy()
-        
-        # Clean up completed or errored downloads after some time
+                
         if progress_data['status'] in ['completed', 'error']:
             elapsed = time.time() - progress_data.get('started_at', 0)
             if elapsed > 30:  # Clean up after 30 seconds
@@ -1143,22 +1174,21 @@ def get_download_progress():
 
 @app.route('/api/cancel_download', methods=['POST'])
 def cancel_download():
-    """Cancel ongoing download"""
+
     session_id = get_session_id()
     
-    # Clean up progress tracking
+   
     if session_id in download_progress:
         del download_progress[session_id]
     
-    # Note: We can't easily kill the ollama pull process, so we just clean up tracking
+
     if session_id in download_threads:
         del download_threads[session_id]
     
     return jsonify({'success': True, 'message': 'Download cancelled'})
 
 @app.route('/api/get_popular_models', methods=['GET'])
-def get_popular_models():
-    """Get list of popular models for suggestions"""
+def get_popular_models():   
     popular_models = [
         {
             'name': 'llama3.2:3b',
@@ -1210,7 +1240,7 @@ def get_popular_models():
 # Session cleanup on app context teardown
 @app.teardown_appcontext
 def cleanup_session(error):
-    """Optional cleanup when app context tears down"""
+    
     pass
 
 @app.route('/debug/static')
@@ -1263,10 +1293,10 @@ if __name__ == '__main__':
         time.sleep(2)  # Wait for Flask to start
         try:
             url = f'http://127.0.0.1:{port}'
-            print(f"🌐 Opening browser at {url}")
+            print(f"Opening browser at {url}")
             webbrowser.open_new(url)
         except Exception as e:
-            print(f"⚠️  Could not open browser: {e}")
+            print(f"Could not open browser: {e}")
     
     # Find an available port
     port = find_free_port()
@@ -1284,34 +1314,33 @@ if __name__ == '__main__':
     print(f"Available Caption Models ({len(caption_models)}): {caption_models}")
     print(f"Default Chat Model: {selected_chat_model}")
     print(f"Default Image Model: {selected_image_model}")
-    print("🚀 Starting Flask server with session support on http://localhost:5000")
-    print("👥 Multiple users can now use the app simultaneously without interference")
-    print("📥 Complete model management: list, download, delete with persistent progress")
-    print("🎭 Complete character management: create, edit, delete with full customization")
-    print("🔧 Use the TEST OLLAMA button to debug download issues")
+    print(f"Starting Flask server with session support on http://localhost:{port}")
+    print("Multiple users can now use the app simultaneously without interference")
+    print("Complete model management: list, download, delete with persistent progress")
+    print("Complete character management: create, edit, delete with full customization")
+    print("Use the TEST OLLAMA button to debug download issues")
     
     browser_thread = threading.Timer(2.0, open_browser, args=(port,))
     browser_thread.daemon = True
     browser_thread.start()    
-    try:
-        # Start Flask app with dynamic port
+    try:        
         app.run(
-            debug=False,  # Disable debug mode to prevent restart issues
+            debug=False, 
             host='127.0.0.1',
             port=port,
-            use_reloader=False,  # Prevent auto-reload which causes port conflicts
+            use_reloader=False,
             threaded=True
         )
     except KeyboardInterrupt:
-        print("\n🛑 Shutting down Ollama Chat UI...")
-        print("👋 Goodbye!")
+        print("\nShutting down Ollama Chat UI...")
+        print("Goodbye!")
     except OSError as e:
         if "Address already in use" in str(e):
-            print(f"\n❌ Port {port} is already in use!")
+            print(f"\nPort {port} is already in use!")
             print("   The app will try another port automatically on next run.")
         else:
-            print(f"\n❌ Error starting server: {e}")
+            print(f"\nError starting server: {e}")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+        print(f"\nUnexpected error: {e}")
 
     #app.run(debug=True, host='0.0.0.0', port=port)
