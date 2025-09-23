@@ -1,5 +1,6 @@
 # Multi Model AI chat App
 - An AI chat app, where you can create your characters and chat with them. Download models that you wish with in build model manager. You can even share images with your AI character and see reactions. I created this app in WSL and you will need Ollama cli to run this.
+- Fine the executable file for windows inside the dist folder if you don't want to deal with python at all you will still need Ollama CLI
 
 ## Features
 - Single Server Architecture - React and Flask served from one port
@@ -40,4 +41,5 @@
 
 ## Future Plans
 - Maybe containerise it, if you know how to containerise it please do contribute
+
 - Add chat saving system into local storage
