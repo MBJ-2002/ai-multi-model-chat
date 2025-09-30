@@ -115,7 +115,7 @@ def get_available_models():
         
     except Exception as e:
         print(f"Error getting models from Ollama: {e}")
-        return ["wizard-vicuna-uncensored:7b"], ["aha2025/llama-joycaption-beta-one-hf-llava:Q4_K_M"], []
+        return ["NA"], ["NA"], []
 
 def get_local_models():
     """Get list of locally installed models using ollama list command"""
