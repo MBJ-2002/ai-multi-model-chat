@@ -1297,14 +1297,14 @@ if __name__ == '__main__':
             webbrowser.open_new(url)
         except Exception as e:
             print(f"Could not open browser: {e}")
-    
+    # Windows problem: Sometimes window's services uses 5000 which creates conflict
     # Find an available port
     port = find_free_port()
     
     # Fallback port selection if the detected port becomes unavailable
     fallback_ports = [5000, 5001, 5002, 5003, 8000, 8080, 3000]
     if not is_port_available(port):
-        print(f"⚠️  Port {port} became unavailable, trying fallback ports...")
+        print(f"Port {port} became unavailable, trying fallback ports...")
         for fallback_port in fallback_ports:
             if is_port_available(fallback_port):
                 port = fallback_port
