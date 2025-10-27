@@ -168,13 +168,13 @@ function CharacterManagerModal({ onClose }) {
             className={`tab-button ${activeTab === 'manage' ? 'active' : ''}`}
             onClick={() => setActiveTab('manage')}
           >
-            🎭 Manage Characters ({characters.length})
+            Manage Characters ({characters.length})
           </button>
           <button 
             className={`tab-button ${activeTab === 'create' ? 'active' : ''}`}
             onClick={() => setActiveTab('create')}
           >
-            {editingCharacter ? '✏️ Edit Character' : '➕ Create Character'}
+            {editingCharacter ? '✏️ Edit Character' : 'Create Character'}
           </button>
         </div>
 
@@ -196,7 +196,7 @@ function CharacterManagerModal({ onClose }) {
                       className="new-character-btn"
                       onClick={handleNewCharacter}
                     >
-                      ➕ New Character
+                       New Character
                     </button>
                   </div>
                   
@@ -510,7 +510,7 @@ function ModelManagerModal({ onClose }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal model-manager-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>🗂️ Model Manager</h2>
+          <h2>Model Manager</h2>
           <button className="close-btn" onClick={onClose}>✕</button>
         </div>
 
@@ -558,13 +558,13 @@ function ModelManagerModal({ onClose }) {
             className={`tab-button ${activeTab === 'installed' ? 'active' : ''}`}
             onClick={() => setActiveTab('installed')}
           >
-            📱 Installed Models ({models.length})
+            Installed Models ({models.length})
           </button>
           <button 
             className={`tab-button ${activeTab === 'download' ? 'active' : ''}`}
             onClick={() => setActiveTab('download')}
           >
-            📥 Download Models
+            Download Models
           </button>
         </div>
 
